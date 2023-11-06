@@ -1,0 +1,12 @@
+apiVersion: hitosea.com/v1
+kind: VirtualMachineSnapshotContent
+metadata:
+  labels:
+    app.kubernetes.io/name: virtualmachinesnapshotcontent
+    app.kubernetes.io/instance: virtualmachinesnapshotcontent-sample
+    app.kubernetes.io/part-of: histore
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: histore
+  name: virtualmachinesnapshotcontent-sample
+spec:
+  # TODO(user): Add fields here

@@ -1,0 +1,31 @@
+# permissions for end users to edit virtualmachinerestores.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: virtualmachinerestore-editor-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: histore
+    app.kubernetes.io/part-of: histore
+    app.kubernetes.io/managed-by: kustomize
+  name: virtualmachinerestore-editor-role
+rules:
+- apiGroups:
+  - hitosea.com
+  resources:
+  - virtualmachinerestores
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - hitosea.com
+  resources:
+  - virtualmachinerestores/status
+  verbs:
+  - get

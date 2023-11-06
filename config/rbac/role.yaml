@@ -1,0 +1,122 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - hitosea.com
+  resources:
+  - virtualmachinerestores
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - hitosea.com
+  resources:
+  - virtualmachinerestores/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - hitosea.com
+  resources:
+  - virtualmachinerestores/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - hitosea.com
+  resources:
+  - virtualmachinesnapshotcontents
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - hitosea.com
+  resources:
+  - virtualmachinesnapshotcontents/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - hitosea.com
+  resources:
+  - virtualmachinesnapshotcontents/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - hitosea.com
+  resources:
+  - virtualmachinesnapshots
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - hitosea.com
+  resources:
+  - virtualmachinesnapshots/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - hitosea.com
+  resources:
+  - virtualmachinesnapshots/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachines
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachines/status
+  verbs:
+  - get
+- apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumesnapshotclass
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumesnapshots
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumesnapshots/status
+  verbs:
+  - get
