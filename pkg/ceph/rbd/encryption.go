@@ -273,7 +273,7 @@ func (ri *rbdImage) encryptDevice(ctx context.Context, devicePath string) error 
 	return nil
 }
 
-func (rv *rbdVolume) openEncryptedDevice(ctx context.Context, devicePath string) (string, error) {
+func (rv *RbdVolume) openEncryptedDevice(ctx context.Context, devicePath string) (string, error) {
 	passphrase, err := rv.blockEncryption.GetCryptoPassphrase(rv.VolID)
 	if err != nil {
 		//log.ErrorLog(ctx, "failed to get passphrase for encrypted device %s: %v",

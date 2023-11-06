@@ -26,10 +26,10 @@ import (
 
 func CreateRBDVolumeFromSnapshot(
 	ctx context.Context,
-	parentVol *rbdVolume,
+	parentVol *RbdVolume,
 	rbdSnap *rbdSnapshot,
 	cr *util.Credentials,
-) (*rbdVolume, error) {
+) (*RbdVolume, error) {
 	// 1. 生成克隆卷的rbdVolume结构
 	cloneRbd := GenerateVolFromSnap(rbdSnap) // 传入nil表示不指定快照
 	cloneRbd.RbdImageName = strings.Replace(cloneRbd.RbdImageName, "csi-snap-", "csi-vol-", 1)
@@ -41,16 +41,12 @@ func CreateRBDVolumeFromSnapshot(
 		return cloneRbd, err
 	}
 
-	fmt.Println("克隆前 cloneRbd.ParentName ", cloneRbd.ParentName)
-
 	// 3. 从指定的快照创建RBD克隆
 	err = createRBDClone(ctx, parentVol, cloneRbd, rbdSnap)
 	if err != nil {
 		fmt.Println(err.Error() + "  createRBDClone")
 		return cloneRbd, err
 	}
-
-	fmt.Println("克隆后 cloneRbd.ParentName ", cloneRbd.ParentName)
 
 	// 4. 拷贝父卷的加密配置到克隆卷
 	err = parentVol.copyEncryptionConfig(&cloneRbd.rbdImage, false)
@@ -80,7 +76,6 @@ func CreateRBDVolumeFromSnapshot(
 	}
 
 	// 7. 扁平化RBD克隆
-	fmt.Println("cloneRbd ---> ", cloneRbd)
 	err = cloneRbd.flattenRbdImage(ctx, false, 4, 8)
 	if err != nil {
 		fmt.Println(err.Error() + "  cloneRbd.flattenRbdImage")
@@ -92,7 +87,7 @@ func CreateRBDVolumeFromSnapshot(
 
 func createRBDClone(
 	ctx context.Context,
-	parentVol, cloneRbdVol *rbdVolume,
+	parentVol, cloneRbdVol *RbdVolume,
 	snap *rbdSnapshot,
 ) error {
 	// create snapshot
@@ -137,9 +132,9 @@ func createRBDClone(
 // (parentVol) and deletes the RBD-image rbdVol.
 func cleanUpSnapshot(
 	ctx context.Context,
-	parentVol *rbdVolume,
+	parentVol *RbdVolume,
 	rbdSnap *rbdSnapshot,
-	rbdVol *rbdVolume,
+	rbdVol *RbdVolume,
 ) error {
 	err := parentVol.deleteSnapshot(ctx, rbdSnap)
 	if err != nil {
@@ -151,7 +146,7 @@ func cleanUpSnapshot(
 	}
 
 	if rbdVol != nil {
-		err := rbdVol.deleteImage(ctx)
+		err := rbdVol.DeleteImage(ctx)
 		if err != nil {
 			if !errors.Is(err, ErrImageNotFound) {
 				//log.ErrorLog(ctx, "failed to delete rbd image %q with error: %v", rbdVol, err)
@@ -164,8 +159,8 @@ func cleanUpSnapshot(
 	return nil
 }
 
-func GenerateVolFromSnap(rbdSnap *rbdSnapshot) *rbdVolume {
-	vol := new(rbdVolume)
+func GenerateVolFromSnap(rbdSnap *rbdSnapshot) *RbdVolume {
+	vol := new(RbdVolume)
 	vol.ClusterID = rbdSnap.ClusterID
 	vol.VolID = rbdSnap.VolID
 	vol.Monitors = rbdSnap.Monitors
@@ -185,9 +180,9 @@ func GenerateVolFromSnap(rbdSnap *rbdSnapshot) *rbdVolume {
 
 func undoSnapshotCloning(
 	ctx context.Context,
-	parentVol *rbdVolume,
+	parentVol *RbdVolume,
 	rbdSnap *rbdSnapshot,
-	cloneVol *rbdVolume,
+	cloneVol *RbdVolume,
 	cr *util.Credentials,
 ) error {
 	err := cleanUpSnapshot(ctx, parentVol, rbdSnap, cloneVol)

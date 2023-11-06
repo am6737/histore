@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -44,6 +45,7 @@ const (
 type VirtualMachineSnapshotReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	Log    logr.Logger
 }
 
 //+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachinesnapshots,verbs=get;list;watch;create;update;patch;delete
@@ -55,9 +57,14 @@ type VirtualMachineSnapshotReconciler struct {
 
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots/status,verbs=get
-//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclass,verbs=get;list;watch
+//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
+// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents/status,verbs=get;list;watch;update
 
-//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclass,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=persistentvolumes,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -69,36 +76,22 @@ type VirtualMachineSnapshotReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.14.4/pkg/reconcile
 func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	// 1. 根据请求获取到 VirtualMachineSnapshot 对象
-	var vmSnapshot hitoseacomv1.VirtualMachineSnapshot
-	if err := r.Get(ctx, req.NamespacedName, &vmSnapshot); err != nil {
+	vmSnapshot := &hitoseacomv1.VirtualMachineSnapshot{}
+	if err := r.Get(ctx, req.NamespacedName, vmSnapshot); err != nil {
 		if apierrors.IsNotFound(err) {
 			// 对象不存在，可能已被删除，可以返回一个无需处理的结果
 			return ctrl.Result{}, nil
 		}
-		log.Error(err, "无法获取 VirtualMachineSnapshot 对象")
+		logger.Error(err, "无法获取 VirtualMachineSnapshot 对象")
 		return ctrl.Result{}, err
 	}
 
-	content, err := r.getContent(&vmSnapshot)
+	content, err := r.getContent(vmSnapshot)
 	if err != nil {
 		return ctrl.Result{}, err
-	}
-
-	// Make sure status is initialized before doing anything
-	if vmSnapshot.Status != nil {
-		//if source != nil {
-		if vmSnapshotProgressing(&vmSnapshot) && !vmSnapshotTerminating(&vmSnapshot) {
-			// create content if does not exist
-			if content == nil {
-				if err := r.createContent(&vmSnapshot); err != nil {
-					return ctrl.Result{}, err
-				}
-			}
-		}
-		//}
 	}
 
 	// Make sure status is initialized before doing anything
@@ -106,21 +99,44 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		vmSnapshot.Status = &hitoseacomv1.VirtualMachineSnapshotStatus{}
 	}
 
-	vm, err := r.getVM(&vmSnapshot)
+	// Make sure status is initialized before doing anything
+	//if vmSnapshot.Status.VirtualMachineSnapshotContentName == nil {
+	//	//if source != nil {
+	//	if vmSnapshotProgressing(vmSnapshot) && !vmSnapshotTerminating(vmSnapshot) {
+	//		// create content if does not exist
+	//		if content == nil {
+	//			if err := r.createContent(vmSnapshot); err != nil {
+	//				return ctrl.Result{}, err
+	//			}
+	//		}
+	//	}
+	//	//}
+	//}
+
+	// create content if does not exist
+	if content == nil {
+		if err := r.createContent(vmSnapshot); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	vm, err := r.getVM(vmSnapshot)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// TODO: 在这里根据情况更新状态字段
+	contentName := GetVMSnapshotContentName(vmSnapshot)
 	vmSnapshot.Status.SourceUID = &vm.UID
+	vmSnapshot.Status.VirtualMachineSnapshotContentName = &contentName
 	// vmSnapshot.Status.Phase = ...
 	// vmSnapshot.Status.ReadyToUse = ...
 	// vmSnapshot.Status.Error = ...
 	// vmSnapshot.Status.CreationTime = ...
 
 	// 更新 VirtualMachineSnapshot 对象的状态
-	if err := r.Status().Update(ctx, &vmSnapshot); err != nil {
-		log.Error(err, "无法更新 VirtualMachineSnapshot 对象的状态")
+	if err := r.Status().Update(ctx, vmSnapshot); err != nil {
+		logger.Error(err, "无法更新 VirtualMachineSnapshot 对象的状态")
 		return ctrl.Result{}, err
 	}
 
@@ -142,21 +158,21 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 	}
 
 	var volumeBackups []hitoseacomv1.VolumeBackup
-	pvcs := vm.Spec.Template.Spec.Volumes
-	for _, v := range pvcs {
-		pvc, err := r.getSnapshotPVC(vmSnapshot.Namespace, v.Name)
+	pvcs := GetPVCsFromVolumes(vm.Spec.Template.Spec.Volumes)
+	for volumeName, pvcName := range pvcs {
+		pvc, err := r.getSnapshotPVC(vmSnapshot.Namespace, pvcName)
 		if err != nil {
 			return err
 		}
 
 		if pvc == nil {
-			//log.Log.Warningf("No snapshot PVC for %s/%s", vmSnapshot.Namespace, pvcName)
+			r.Log.Info("No snapshot PVC", vmSnapshot.Namespace, pvcName)
 			continue
 		}
 
-		volumeSnapshotName := fmt.Sprintf("vmsnapshot-%s-volume-%s", vmSnapshot.UID, v.Name)
+		volumeSnapshotName := fmt.Sprintf("vmsnapshot-%s-volume-%s", vmSnapshot.UID, pvcName)
 		vb := hitoseacomv1.VolumeBackup{
-			VolumeName: v.Name,
+			VolumeName: volumeName,
 			PersistentVolumeClaim: hitoseacomv1.PersistentVolumeClaim{
 				ObjectMeta: *getSimplifiedMetaObject(pvc.ObjectMeta),
 				Spec:       *pvc.Spec.DeepCopy(),
@@ -171,15 +187,29 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 	//if err != nil {
 	//	return err
 	//}
+
 	content := &hitoseacomv1.VirtualMachineSnapshotContent{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       GetVMSnapshotContentName(vmSnapshot),
-			Namespace:  vmSnapshot.Namespace,
-			Finalizers: []string{vmSnapshotContentFinalizer},
+			Name:      GetVMSnapshotContentName(vmSnapshot),
+			Namespace: vmSnapshot.Namespace,
+			//Finalizers: []string{vmSnapshotContentFinalizer},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: hitoseacomv1.GroupVersion.String(),
+					Kind:       "VirtualMachineSnapshot",
+					Name:       vmSnapshot.Name,
+					UID:        vmSnapshot.UID,
+				},
+			},
 		},
 		Spec: hitoseacomv1.VirtualMachineSnapshotContentSpec{
 			VirtualMachineSnapshotName: &vmSnapshot.Name,
-			//Source:                     sourceSpec,
+			Source: hitoseacomv1.SourceSpec{
+				VirtualMachine: hitoseacomv1.VirtualMachine{
+					ObjectMeta:     *getSimplifiedMetaObject(vm.ObjectMeta),
+					VirtualMachine: vm,
+				},
+			},
 			VolumeBackups: volumeBackups,
 		},
 	}
@@ -209,20 +239,20 @@ func getSimplifiedMetaObject(meta metav1.ObjectMeta) *metav1.ObjectMeta {
 
 func (r *VirtualMachineSnapshotReconciler) getSnapshotPVC(namespace, volumeName string) (*corev1.PersistentVolumeClaim, error) {
 
-	var obj corev1.PersistentVolumeClaim
-	if err := r.Client.Get(context.TODO(), client.ObjectKey{Namespace: namespace, Name: volumeName}, &obj); err != nil {
+	obj := &corev1.PersistentVolumeClaim{}
+	if err := r.Client.Get(context.TODO(), client.ObjectKey{Namespace: namespace, Name: volumeName}, obj); err != nil {
 		return nil, err
 	}
 
 	pvc := obj.DeepCopy()
 
 	if pvc.Spec.VolumeName == "" {
-		//log.Log.Warningf("Unbound PVC %s/%s", pvc.Namespace, pvc.Name)
+		r.Log.Info("Unbound PVC", pvc.Namespace, pvc.Name)
 		return nil, nil
 	}
 
 	if pvc.Spec.StorageClassName == nil {
-		//log.Log.Warningf("No storage class for PVC %s/%s", pvc.Namespace, pvc.Name)
+		r.Log.Info("No storage class for PVC", pvc.Namespace, pvc.Name)
 		return nil, nil
 	}
 
@@ -240,8 +270,8 @@ func (r *VirtualMachineSnapshotReconciler) getSnapshotPVC(namespace, volumeName 
 
 func (r *VirtualMachineSnapshotReconciler) getVolumeSnapshotClass(storageClassName string) (string, error) {
 
-	var obj storagev1.StorageClass
-	if err := r.Client.Get(context.TODO(), client.ObjectKey{Name: storageClassName}, &obj); err != nil {
+	obj := &storagev1.StorageClass{}
+	if err := r.Client.Get(context.TODO(), client.ObjectKey{Name: storageClassName}, obj); err != nil {
 		return "", err
 	}
 
@@ -277,10 +307,10 @@ func (r *VirtualMachineSnapshotReconciler) getVolumeSnapshotClass(storageClassNa
 
 func (r *VirtualMachineSnapshotReconciler) getVolumeSnapshotClasses() []snapshotv1.VolumeSnapshotClass {
 
-	var objs snapshotv1.VolumeSnapshotClassList
+	objs := &snapshotv1.VolumeSnapshotClassList{}
 	var vscs []snapshotv1.VolumeSnapshotClass
 
-	if err := r.Client.List(context.TODO(), &objs); err != nil {
+	if err := r.Client.List(context.TODO(), objs); err != nil {
 		return nil
 	}
 
@@ -309,6 +339,10 @@ func VmSnapshotReady(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
 	return vmSnapshot.Status != nil && vmSnapshot.Status.ReadyToUse != nil && *vmSnapshot.Status.ReadyToUse
 }
 
+func vmSnapshotContentReady(vmSnapshotContent *hitoseacomv1.VirtualMachineSnapshotContent) bool {
+	return vmSnapshotContent.Status != nil && vmSnapshotContent.Status.ReadyToUse != nil && *vmSnapshotContent.Status.ReadyToUse
+}
+
 func vmSnapshotError(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) *hitoseacomv1.Error {
 	if vmSnapshot != nil && vmSnapshot.Status != nil && vmSnapshot.Status.Error != nil {
 		return vmSnapshot.Status.Error
@@ -318,14 +352,16 @@ func vmSnapshotError(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) *hitoseaco
 
 func (r *VirtualMachineSnapshotReconciler) getContent(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) (*hitoseacomv1.VirtualMachineSnapshotContent, error) {
 	contentName := GetVMSnapshotContentName(vmSnapshot)
-	var vmsc *hitoseacomv1.VirtualMachineSnapshotContent
-
+	vmsc := &hitoseacomv1.VirtualMachineSnapshotContent{}
 	err := r.Client.Get(context.TODO(), client.ObjectKey{
 		Namespace: vmSnapshot.Namespace,
 		Name:      contentName,
 	}, vmsc)
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		// 如果不是已存在的错误，则返回错误
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// 如果资源不存在，则返回一个空的对象
+			return nil, nil
+		}
 		return nil, err
 	}
 

@@ -68,7 +68,7 @@ func validateRbdSnap(rbdSnap *rbdSnapshot) error {
 	return err
 }
 
-func getEncryptionConfig(rbdVol *rbdVolume) (string, util.EncryptionType) {
+func getEncryptionConfig(rbdVol *RbdVolume) (string, util.EncryptionType) {
 	switch {
 	case rbdVol.isBlockEncrypted():
 		return rbdVol.blockEncryption.GetID(), util.EncryptionTypeBlock
@@ -80,7 +80,7 @@ func getEncryptionConfig(rbdVol *rbdVolume) (string, util.EncryptionType) {
 }
 
 // undoVolReservation is a helper routine to undo a name reservation for rbdVolume.
-func UndoVolReservation(ctx context.Context, rbdVol *rbdVolume, cr *util.Credentials) error {
+func UndoVolReservation(ctx context.Context, rbdVol *RbdVolume, cr *util.Credentials) error {
 	j, err := volJournal.Connect(rbdVol.Monitors, rbdVol.RadosNamespace, cr)
 	if err != nil {
 		return err
@@ -95,7 +95,7 @@ func UndoVolReservation(ctx context.Context, rbdVol *rbdVolume, cr *util.Credent
 
 // ReserveVol is a helper routine to request a rbdVolume name reservation and generate the
 // volume ID for the generated name.
-func ReserveVol(ctx context.Context, rbdVol *rbdVolume, rbdSnap *rbdSnapshot, cr *util.Credentials) error {
+func ReserveVol(ctx context.Context, rbdVol *RbdVolume, rbdSnap *rbdSnapshot, cr *util.Credentials) error {
 	var err error
 
 	//err = updateTopologyConstraints(rbdVol, rbdSnap)
@@ -137,7 +137,7 @@ func ReserveVol(ctx context.Context, rbdVol *rbdVolume, rbdSnap *rbdSnapshot, cr
 
 func CheckSnapCloneExists(
 	ctx context.Context,
-	parentVol *rbdVolume,
+	parentVol *RbdVolume,
 	rbdSnap *rbdSnapshot,
 	cr *util.Credentials,
 ) (bool, error) {
@@ -178,7 +178,7 @@ func CheckSnapCloneExists(
 	}
 	vol.ReservedID = snapUUID
 	// Fetch on-disk image attributes
-	err = vol.getImageInfo()
+	err = vol.GetImageInfo()
 	if err != nil {
 		if errors.Is(err, ErrImageNotFound) {
 			err = parentVol.deleteSnapshot(ctx, rbdSnap)
@@ -267,7 +267,7 @@ func undoSnapReservation(ctx context.Context, rbdSnap *rbdSnapshot, cr *util.Cre
 }
 
 // storeImageID retrieves the image ID and stores it in OMAP.
-func (rv *rbdVolume) storeImageID(ctx context.Context, j *journal.Connection) error {
+func (rv *RbdVolume) storeImageID(ctx context.Context, j *journal.Connection) error {
 	err := rv.getImageID()
 	if err != nil {
 		//log.ErrorLog(ctx, "failed to get image id %s: %v", rv, err)

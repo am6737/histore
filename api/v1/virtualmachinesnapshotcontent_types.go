@@ -44,16 +44,66 @@ type VolumeBackup struct {
 	VolumeSnapshotName *string `json:"volumeSnapshotName,omitempty"`
 }
 
+type VirtualMachine struct {
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +optional
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	*kubevirtv1.VirtualMachine `json:",omitempty"`
+}
+
 // SourceSpec contains the appropriate spec for the resource being snapshotted
 type SourceSpec struct {
-	// +optional
-	VirtualMachine *kubevirtv1.VirtualMachine `json:"virtualMachine,omitempty"`
+	VirtualMachine VirtualMachine `json:"virtualMachine,omitempty"`
 }
+
+//type VirtualMachine struct {
+//	// Standard object's metadata.
+//	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+//	// +kubebuilder:pruning:PreserveUnknownFields
+//	// +optional
+//	metav1.ObjectMeta `json:"metadata,omitempty"`
+//
+//	// Spec defines the desired characteristics of a volume requested by a pod author.
+//	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+//	// +optional
+//	*kubevirtv1.VirtualMachine `json:",omitempty"`
+//}
+
+type VirtualMachineSnapshotContentPhase int
+
+const (
+	EnableReplication VirtualMachineSnapshotContentPhase = iota
+	VolumeDemote
+	VolumePromote
+	DisableReplication
+	Complete
+)
 
 // VirtualMachineSnapshotContentStatus defines the observed state of VirtualMachineSnapshotContent
 type VirtualMachineSnapshotContentStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// +optional
+	Phase VirtualMachineSnapshotContentPhase `json:"phase,omitempty"`
+	// +optional
+	// +nullable
+	CreationTime *metav1.Time `json:"creationTime,omitempty"`
+
+	// +optional
+	ReadyToUse *bool `json:"readyToUse,omitempty"`
+
+	// +optional
+	Error *Error `json:"error,omitempty"`
+
+	// +optional
+	VolumeSnapshotStatus []VolumeSnapshotStatus `json:"volumeSnapshotStatus,omitempty"`
+}
+
+// VolumeSnapshotStatus is the status of a VolumeSnapshot
+type VolumeSnapshotStatus struct {
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	VolumeSnapshotName string `json:"volumeSnapshotName"`
+
 	// +optional
 	// +nullable
 	CreationTime *metav1.Time `json:"creationTime,omitempty"`
@@ -73,8 +123,8 @@ type VirtualMachineSnapshotContent struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   VirtualMachineSnapshotContentSpec   `json:"spec,omitempty"`
-	Status VirtualMachineSnapshotContentStatus `json:"status,omitempty"`
+	Spec   VirtualMachineSnapshotContentSpec    `json:"spec,omitempty"`
+	Status *VirtualMachineSnapshotContentStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true

@@ -37,8 +37,29 @@ type VirtualMachineRestoreSpec struct {
 
 // VirtualMachineRestoreStatus defines the observed state of VirtualMachineRestore
 type VirtualMachineRestoreStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// +optional
+	Restores []VolumeRestore `json:"restores,omitempty"`
+
+	// +optional
+	RestoreTime *metav1.Time `json:"restoreTime,omitempty"`
+
+	// +optional
+	DeletedDataVolumes []string `json:"deletedDataVolumes,omitempty"`
+
+	// +optional
+	Complete *bool `json:"complete,omitempty"`
+}
+
+// VolumeRestore contains the data neeed to restore a PVC
+type VolumeRestore struct {
+	VolumeName string `json:"volumeName"`
+
+	PersistentVolumeClaimName string `json:"persistentVolumeClaim"`
+
+	VolumeSnapshotName string `json:"volumeSnapshotName"`
+
+	// +optional
+	DataVolumeName *string `json:"dataVolumeName,omitempty"`
 }
 
 //+kubebuilder:object:root=true
@@ -49,8 +70,8 @@ type VirtualMachineRestore struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   VirtualMachineRestoreSpec   `json:"spec,omitempty"`
-	Status VirtualMachineRestoreStatus `json:"status,omitempty"`
+	Spec   VirtualMachineRestoreSpec    `json:"spec,omitempty"`
+	Status *VirtualMachineRestoreStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true

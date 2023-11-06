@@ -16,7 +16,7 @@ import (
 // RBD image from an RBD snapshot if the process was interrupted at one point.
 func CloneFromSnapshot(
 	ctx context.Context,
-	rbdVol *rbdVolume,
+	rbdVol *RbdVolume,
 	rbdSnap *rbdSnapshot,
 	cr *util.Credentials,
 	parameters map[string]string,
@@ -108,10 +108,10 @@ const (
 
 func DoSnapshotClone(
 	ctx context.Context,
-	parentVol *rbdVolume,
+	parentVol *RbdVolume,
 	rbdSnap *rbdSnapshot,
 	cr *util.Credentials,
-) (*rbdVolume, error) {
+) (*RbdVolume, error) {
 	// generate cloned volume details from snapshot
 	cloneRbd := GenerateVolFromSnap(rbdSnap)
 	defer cloneRbd.Destroy()

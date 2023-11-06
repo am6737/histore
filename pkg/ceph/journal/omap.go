@@ -167,8 +167,8 @@ func setOMapKeys(
 	}
 	//log.DebugLog(ctx, "set omap keys (pool=%q, namespace=%q, name=%q): %+v)",
 	//	poolName, namespace, oid, pairs)
-	fmt.Println(ctx, "set omap keys (pool=%q, namespace=%q, name=%q): %+v)",
-		poolName, namespace, oid, pairs)
+	fmt.Println(ctx, fmt.Sprintf("set omap keys (pool=%q, namespace=%q, name=%q): %+v)",
+		poolName, namespace, oid, pairs))
 
 	return nil
 }
