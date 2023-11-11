@@ -94,11 +94,15 @@ spec:
         resources:
           limits:
             cpu: 500m
-            memory: 128Mi
+            memory: 256Mi
           requests:
             cpu: 10m
             memory: 64Mi
         volumeMounts:
+          - name: ceph-csi-config-master
+            mountPath: /etc/ceph-csi-config/
+          - name: ceph-config
+            mountPath: /etc/ceph/
           - name: master-rbd-sock
             mountPath: /var/lib/kubelet/plugins/rbd.csi.ceph.com/csi-addons.sock
           - name: slave-rbd-sock
@@ -106,6 +110,12 @@ spec:
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
       volumes:
+        - name: ceph-config
+          configMap:
+            name: ceph-config
+        - name: ceph-csi-config-master
+          configMap:
+            name: ceph-csi-config-master
         - name: master-rbd-sock
           hostPath:
             path: /var/lib/kubelet/plugins/rbd.csi.ceph.com/csi-addons.sock

@@ -300,7 +300,7 @@ func (r *VirtualMachineSnapshotContentReconciler) deleteVolumeHandler(e event.De
 		r.Log.Error(err, "get VirtualMachineSnapshotContent")
 		return false
 	}
-	fmt.Println("deleteVolumeHandler 2")
+	fmt.Println("content => ", content)
 	SecretName := content.Annotations[prefixedSnapshotDeleteSecretNameKey]
 	SecretNamespace := content.Annotations[prefixedSnapshotDeleteSecretNamespaceKey]
 	r.Log.Info("GetDeletionTimestamp => ", content.GetDeletionTimestamp().String())
