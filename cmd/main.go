@@ -43,7 +43,10 @@ import (
 const (
 	// defaultTimeout is default timeout for RPC call.
 	defaultTimeout = time.Minute
+	//defaultLeaseDuration = 30 * time.Second
 )
+
+var defaultLeaseDuration = 30 * time.Second
 
 var (
 	scheme   = runtime.NewScheme()
@@ -90,6 +93,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "47fda432.hitosea.com",
+		LeaseDuration:          &defaultLeaseDuration,
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly

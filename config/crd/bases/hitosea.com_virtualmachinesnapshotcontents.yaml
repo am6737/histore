@@ -5452,6 +5452,8 @@ spec:
                 type: integer
               readyToUse:
                 type: boolean
+              volumeHandle:
+                type: string
               volumeSnapshotStatus:
                 items:
                   description: VolumeSnapshotStatus is the status of a VolumeSnapshot

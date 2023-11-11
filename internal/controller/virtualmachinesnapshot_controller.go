@@ -38,7 +38,6 @@ import (
 
 const (
 	defaultVolumeSnapshotClassAnnotation = "snapshot.storage.kubernetes.io/is-default-class"
-	vmSnapshotContentFinalizer           = "snapshot.hitosea.com/vmsnapshotcontent-protection"
 )
 
 // VirtualMachineSnapshotReconciler reconciles a VirtualMachineSnapshot object
@@ -55,10 +54,10 @@ type VirtualMachineSnapshotReconciler struct {
 //+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachines,verbs=get;list;watch
 //+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachines/status,verbs=get
 
-//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots/status,verbs=get
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch
-// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
+// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch;update;delete
 // +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents/status,verbs=get;list;watch;update
 
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
@@ -120,6 +119,32 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
+	if vmSnapshotTerminating(vmSnapshot) && content != nil {
+		r.Log.Info("Deleting vmsnapshotcontent", content.Namespace, content.Name)
+		if err = r.Client.Delete(ctx, content); err != nil {
+			return ctrl.Result{}, err
+		}
+		// 移除终结器
+	}
+
+	if vmSnapshotDeleting(vmSnapshot) {
+		// Enable the vmsnapshot to be deleted only in case it completed
+		// or after waiting until the content is deleted if needed
+		//if !vmSnapshotProgressing(vmSnapshot) || contentDeletedIfNeeded(vmSnapshotCpy, content) {
+		//}
+	} else {
+		// since no status subresource can update metadata and status
+		AddFinalizer(vmSnapshot, vmSnapshotFinalizer)
+
+		if content != nil && content.Status != nil {
+			// content exists and is initialized
+			vmSnapshot.Status.VirtualMachineSnapshotContentName = &content.Name
+			vmSnapshot.Status.CreationTime = content.Status.CreationTime
+			vmSnapshot.Status.ReadyToUse = content.Status.ReadyToUse
+			vmSnapshot.Status.Error = content.Status.Error
+		}
+	}
+
 	vm, err := r.getVM(vmSnapshot)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -144,7 +169,15 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 }
 
 func vmSnapshotTerminating(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
+	return vmSnapshotDeleting(vmSnapshot) || vmSnapshotDeadlineExceeded(vmSnapshot)
+}
+
+func vmSnapshotDeadlineExceeded(snapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
 	return false
+}
+
+func vmSnapshotDeleting(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
+	return vmSnapshot != nil && vmSnapshot.DeletionTimestamp != nil
 }
 
 func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) error {
@@ -186,13 +219,17 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 	//sourceSpec, err := source.Spec()
 	//if err != nil {
 	//	return err
-	//}
+	vm.Status = kubevirtv1.VirtualMachineStatus{}
 
 	content := &hitoseacomv1.VirtualMachineSnapshotContent{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      GetVMSnapshotContentName(vmSnapshot),
-			Namespace: vmSnapshot.Namespace,
-			//Finalizers: []string{vmSnapshotContentFinalizer},
+			Name:       GetVMSnapshotContentName(vmSnapshot),
+			Namespace:  vmSnapshot.Namespace,
+			Finalizers: []string{vmSnapshotContentFinalizer},
+			Annotations: map[string]string{
+				prefixedSnapshotDeleteSecretNameKey:      "csi-ceph-secret-slave",
+				prefixedSnapshotDeleteSecretNamespaceKey: "default",
+			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: hitoseacomv1.GroupVersion.String(),

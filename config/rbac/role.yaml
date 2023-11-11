@@ -137,6 +137,8 @@ rules:
   - get
   - list
   - watch
+  - update
+  - delete
 - apiGroups:
   - snapshot.storage.k8s.io
   resources:
@@ -155,6 +157,7 @@ rules:
   - get
   - list
   - watch
+  - delete
 - apiGroups:
   - snapshot.storage.k8s.io
   resources:

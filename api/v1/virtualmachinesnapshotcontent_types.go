@@ -84,6 +84,10 @@ const (
 type VirtualMachineSnapshotContentStatus struct {
 	// +optional
 	Phase VirtualMachineSnapshotContentPhase `json:"phase,omitempty"`
+
+	// +optional
+	VolumeHandle *string `json:"volumeHandle,omitempty"`
+
 	// +optional
 	// +nullable
 	CreationTime *metav1.Time `json:"creationTime,omitempty"`

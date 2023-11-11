@@ -76,8 +76,8 @@ func getOMapValues(
 
 	if err != nil {
 		if errors.Is(err, rados.ErrNotFound) {
-			//log.ErrorLog(ctx, "omap not found (pool=%q, namespace=%q, name=%q): %v",
-			//	poolName, namespace, oid, err)
+			fmt.Println(ctx, "omap not found (pool=%q, namespace=%q, name=%q): %v",
+				poolName, namespace, oid, err)
 
 			return nil, util.JoinErrors(util.ErrKeyNotFound, err)
 		}
@@ -118,18 +118,18 @@ func removeMapKeys(
 			// mimic the previous behavior.
 			//log.DebugLog(ctx, "when removing omap keys, omap not found (pool=%q, namespace=%q, name=%q): %+v",
 			//	poolName, namespace, oid, keys)
-			fmt.Println(ctx, "when removing omap keys, omap not found (pool=%q, namespace=%q, name=%q): %+v",
-				poolName, namespace, oid, keys)
+			fmt.Println(ctx, fmt.Sprintf("when removing omap keys, omap not found (pool=%q, namespace=%q, name=%q): %+v",
+				poolName, namespace, oid, keys))
 		} else {
 			//log.ErrorLog(ctx, "failed removing omap keys (pool=%q, namespace=%q, name=%q): %v",
 			//	poolName, namespace, oid, err)
-			fmt.Println(ctx, "failed removing omap keys (pool=%q, namespace=%q, name=%q): %v",
-				poolName, namespace, oid, err)
+			fmt.Println(ctx, fmt.Sprintf("failed removing omap keys (pool=%q, namespace=%q, name=%q): %v",
+				poolName, namespace, oid, err))
 			return err
 		}
 	}
-	fmt.Println(ctx, "removed omap keys (pool=%q, namespace=%q, name=%q): %+v",
-		poolName, namespace, oid, keys)
+	fmt.Println(ctx, fmt.Sprintf("removed omap keys (pool=%q, namespace=%q, name=%q): %+v",
+		poolName, namespace, oid, keys))
 
 	//log.DebugLog(ctx, "removed omap keys (pool=%q, namespace=%q, name=%q): %+v",
 	//	poolName, namespace, oid, keys)

@@ -134,7 +134,7 @@ func (ri *rbdImage) DemoteImage() error {
 }
 
 // resyncImage resync image to correct the split-brain.
-func (ri *rbdImage) resyncImage() error {
+func (ri *rbdImage) ResyncImage() error {
 	image, err := ri.open()
 	if err != nil {
 		return fmt.Errorf("failed to open image %q with error: %w", ri, err)

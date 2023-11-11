@@ -832,7 +832,6 @@ func (ri *rbdImage) flattenRbdImage(
 	resp, err := ta.AddFlatten(admin.NewImageSpec(ri.Pool, ri.RadosNamespace, ri.RbdImageName))
 	rbdCephMgrSupported := isCephMgrSupported(ctx, ri.ClusterID, err)
 	if rbdCephMgrSupported {
-		fmt.Println("rbdCephMgrSupported 1")
 		if err != nil {
 			// discard flattening error if the image does not have any parent
 			rbdFlattenNoParent := fmt.Sprintf("Image %s/%s does not have a parent", ri.Pool, ri.RbdImageName)
@@ -849,7 +848,6 @@ func (ri *rbdImage) flattenRbdImage(
 		fmt.Println(ctx, "successfully added task to flatten image %q", ri)
 	}
 	if !rbdCephMgrSupported {
-		fmt.Println("rbdCephMgrSupported 2")
 		fmt.Println(
 			ctx,
 			"task manager does not support flatten,image will be flattened once hardlimit is reached: %v",
@@ -868,7 +866,7 @@ func (ri *rbdImage) flattenRbdImage(
 	if err != nil {
 		return err
 	}
-	fmt.Println("任务状态:", formatTaskStatus(taskStatus))
+	fmt.Println("任务状态: ", formatTaskStatus(taskStatus))
 	is := false
 	for {
 		// 确保任务已从列表中移除
@@ -892,33 +890,34 @@ func (ri *rbdImage) flattenRbdImage(
 }
 
 func formatTaskStatus(taskStatus admin.TaskResponse) string {
-	return fmt.Sprintf(`
-		Task ID: %s
-		Action: %s
-		Pool Name: %s
-		Pool Namespace: %s
-		Image Name: %s
-		Image ID: %s
-		In Progress: %t
-		Progress: %f
-		Retry Attempts: %d
-		Retry Time: %s
-		Retry Message: %s
-		Message: %s
-	`,
-		taskStatus.ID,
-		taskStatus.Refs.Action,
-		taskStatus.Refs.PoolName,
-		taskStatus.Refs.PoolNamespace,
-		taskStatus.Refs.ImageName,
-		taskStatus.Refs.ImageID,
-		taskStatus.InProgress,
-		taskStatus.Progress,
-		taskStatus.RetryAttempts,
-		taskStatus.RetryTime,
-		taskStatus.RetryMessage,
-		taskStatus.Message,
-	)
+	return fmt.Sprintf(`Message: %s`, taskStatus.Message)
+	//return fmt.Sprintf(`
+	//	Task ID: %s
+	//	Action: %s
+	//	Pool Name: %s
+	//	Pool Namespace: %s
+	//	Image Name: %s
+	//	Image ID: %s
+	//	In Progress: %t
+	//	Progress: %f
+	//	Retry Attempts: %d
+	//	Retry Time: %s
+	//	Retry Message: %s
+	//	Message: %s
+	//`,
+	//	taskStatus.ID,
+	//	taskStatus.Refs.Action,
+	//	taskStatus.Refs.PoolName,
+	//	taskStatus.Refs.PoolNamespace,
+	//	taskStatus.Refs.ImageName,
+	//	taskStatus.Refs.ImageID,
+	//	taskStatus.InProgress,
+	//	taskStatus.Progress,
+	//	taskStatus.RetryAttempts,
+	//	taskStatus.RetryTime,
+	//	taskStatus.RetryMessage,
+	//	taskStatus.Message,
+	//)
 }
 
 func (ri *rbdImage) getParentName() (string, error) {
@@ -1183,9 +1182,10 @@ func generateVolumeFromVolumeID(
 		return rbdVol, err
 	}
 	rbdVol.RequestName = imageAttributes.RequestName
-	//rbdVol.RbdImageName = imageAttributes.ImageName
-	rbdVol.RbdImageName = strings.Replace(imageAttributes.ImageName, "csi-vol-", "csi-snap-", 1)
-
+	rbdVol.RbdImageName = imageAttributes.ImageName
+	if snapSource {
+		rbdVol.RbdImageName = strings.Replace(rbdVol.RbdImageName, "csi-vol-", "csi-snap-", 1)
+	}
 	rbdVol.ReservedID = vi.ObjectUUID
 	rbdVol.ImageID = imageAttributes.ImageID
 	rbdVol.Owner = imageAttributes.Owner
@@ -1287,7 +1287,6 @@ func GenVolFromVolSnapID(
 		!errors.Is(err, ErrImageNotFound) {
 		return vol, err
 	}
-
 	// Check clusterID mapping exists
 	mapping, mErr := util.GetClusterMappingInfo(vi.ClusterID)
 	if mErr != nil {
@@ -1489,7 +1488,6 @@ func GenSnapFromOptions(ctx context.Context, rbdVol *RbdVolume, snapOptions map[
 	rbdSnap.Pool = rbdVol.Pool
 	rbdSnap.JournalPool = rbdVol.JournalPool
 	rbdSnap.RadosNamespace = rbdVol.RadosNamespace
-	fmt.Println("---------------------1103")
 
 	clusterID, err := util.GetClusterID(snapOptions)
 	if err != nil {
