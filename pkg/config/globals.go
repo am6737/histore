@@ -1,9 +1,12 @@
 package config
 
-func SetGlobals(cfg *DriverConfig) {
+func SetGlobals(cfg *CephConfig) {
 	DC = cfg
 }
 
 var (
-	DC *DriverConfig
+	DC *CephConfig
 )
+
+var MasterCephCsiCfg *CephCsiConfig
+var SlaveCephCsiCfg *CephCsiConfig

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"github.com/am6737/histore/pkg/ceph/journal"
 	"github.com/am6737/histore/pkg/ceph/util"
+	"github.com/am6737/histore/pkg/util/log"
 	"math"
 	"os"
 	"path/filepath"
@@ -808,14 +809,21 @@ func (ri *rbdImage) flattenRbdImage(
 		if err != nil {
 			return err
 		}
-		fmt.Println(
+		//fmt.Println(
+		//	ctx,
+		//	fmt.Sprintf(
+		//		"clone depth is (%d), configured softlimit (%d) and hardlimit (%d) for %s",
+		//		depth,
+		//		softlimit,
+		//		hardlimit,
+		//		ri))
+		log.ExtendedLog(
 			ctx,
-			fmt.Sprintf(
-				"clone depth is (%d), configured softlimit (%d) and hardlimit (%d) for %s",
-				depth,
-				softlimit,
-				hardlimit,
-				ri))
+			"clone depth is (%d), configured softlimit (%d) and hardlimit (%d) for %s",
+			depth,
+			softlimit,
+			hardlimit,
+			ri)
 	}
 	//
 	//if !forceFlatten && (depth < hardlimit) && (depth < softlimit) {

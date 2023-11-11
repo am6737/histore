@@ -54,7 +54,7 @@ type VirtualMachine struct {
 
 // SourceSpec contains the appropriate spec for the resource being snapshotted
 type SourceSpec struct {
-	VirtualMachine VirtualMachine `json:"virtualMachine,omitempty"`
+	VirtualMachine *VirtualMachine `json:"virtualMachine,omitempty"`
 }
 
 //type VirtualMachine struct {
@@ -99,14 +99,15 @@ type VirtualMachineSnapshotContentStatus struct {
 	Error *Error `json:"error,omitempty"`
 
 	// +optional
-	VolumeSnapshotStatus []VolumeSnapshotStatus `json:"volumeSnapshotStatus,omitempty"`
+	VolumeStatus []VolumeStatus `json:"volumeStatus,omitempty"`
 }
 
-// VolumeSnapshotStatus is the status of a VolumeSnapshot
-type VolumeSnapshotStatus struct {
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+// VolumeStatus is the status of a VolumeSnapshot
+type VolumeStatus struct {
+	VolumeHandle string `json:"volumeHandle"`
 
-	VolumeSnapshotName string `json:"volumeSnapshotName"`
+	// +optional
+	Phase VirtualMachineSnapshotContentPhase `json:"phase,omitempty"`
 
 	// +optional
 	// +nullable

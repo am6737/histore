@@ -69,9 +69,8 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	cfg := config.NewDriverConfig()
-	flag.StringVar(&cfg.MasterDriverEndpoint, "master-csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
-	flag.StringVar(&cfg.SlaveDriverEndpoint, "slave-csi-address", "/run/csi/socket", "Address of the Slave CSI driver socket.")
-	flag.DurationVar(&cfg.RPCTimeout, "rpc-timeout", defaultTimeout, "The timeout for RPCs to the CSI driver.")
+	flag.StringVar(&cfg.MasterStorageClass, "master-storage-class", "csi-cephfsplugin-snapclass", "Address of the CSI driver socket.")
+	flag.StringVar(&cfg.SlaveStorageClass, "slave-storage-class", "csi-cephfsplugin-snapclass-slave", "Address of the Slave CSI driver socket.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -120,8 +119,11 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.VirtualMachineRestoreReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Log:          mgr.GetLogger(),
+		MasterScName: cfg.MasterStorageClass,
+		SlaveScName:  cfg.SlaveStorageClass,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachineRestore")
 		os.Exit(1)

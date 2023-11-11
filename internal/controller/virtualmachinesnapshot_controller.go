@@ -25,6 +25,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -121,9 +122,9 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 
 	if vmSnapshotTerminating(vmSnapshot) && content != nil {
 		r.Log.Info("Deleting vmsnapshotcontent", content.Namespace, content.Name)
-		if err = r.Client.Delete(ctx, content); err != nil {
-			return ctrl.Result{}, err
-		}
+		//if err = r.Client.Delete(ctx, content); err != nil {
+		//	return ctrl.Result{}, err
+		//}
 		// 移除终结器
 	}
 
@@ -132,38 +133,48 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		// or after waiting until the content is deleted if needed
 		//if !vmSnapshotProgressing(vmSnapshot) || contentDeletedIfNeeded(vmSnapshotCpy, content) {
 		//}
+		RemoveFinalizer(vmSnapshot, vmSnapshotFinalizer)
 	} else {
 		// since no status subresource can update metadata and status
 		AddFinalizer(vmSnapshot, vmSnapshotFinalizer)
 
 		if content != nil && content.Status != nil {
 			// content exists and is initialized
-			vmSnapshot.Status.VirtualMachineSnapshotContentName = &content.Name
-			vmSnapshot.Status.CreationTime = content.Status.CreationTime
-			vmSnapshot.Status.ReadyToUse = content.Status.ReadyToUse
-			vmSnapshot.Status.Error = content.Status.Error
+			//vmSnapshot.Status.VirtualMachineSnapshotContentName = &content.Name
+			//vmSnapshot.Status.CreationTime = content.Status.CreationTime
+			//vmSnapshot.Status.ReadyToUse = content.Status.ReadyToUse
+			//vmSnapshot.Status.Error = content.Status.Error
 		}
 	}
 
-	vm, err := r.getVM(vmSnapshot)
+	_, err = r.getVM(vmSnapshot)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
+	if err := r.Update(ctx, vmSnapshot); err != nil {
+		logger.Error(err, "无法更新 VirtualMachineSnapshot 对象的状态")
+		return reconcile.Result{}, nil
+	}
+
 	// TODO: 在这里根据情况更新状态字段
-	contentName := GetVMSnapshotContentName(vmSnapshot)
-	vmSnapshot.Status.SourceUID = &vm.UID
-	vmSnapshot.Status.VirtualMachineSnapshotContentName = &contentName
 	// vmSnapshot.Status.Phase = ...
 	// vmSnapshot.Status.ReadyToUse = ...
 	// vmSnapshot.Status.Error = ...
 	// vmSnapshot.Status.CreationTime = ...
-
-	// 更新 VirtualMachineSnapshot 对象的状态
-	if err := r.Status().Update(ctx, vmSnapshot); err != nil {
-		logger.Error(err, "无法更新 VirtualMachineSnapshot 对象的状态")
-		return ctrl.Result{}, err
-	}
+	//vmSnapshotCpy := &hitoseacomv1.VirtualMachineSnapshot{}
+	//if err := r.Get(context.TODO(), client.ObjectKey{Namespace: vmSnapshot.Namespace, Name: vmSnapshot.Name}, vmSnapshotCpy); err != nil {
+	//	return ctrl.Result{}, err
+	//}
+	//contentName := GetVMSnapshotContentName(vmSnapshot)
+	//vmSnapshotCpy.Status.SourceUID = &vm.UID
+	//vmSnapshotCpy.Status.VirtualMachineSnapshotContentName = &contentName
+	//
+	//// 更新 VirtualMachineSnapshot 对象的状态
+	//if err := r.Status().Update(ctx, vmSnapshotCpy); err != nil {
+	//	logger.Error(err, "无法更新 VirtualMachineSnapshot 对象的状态")
+	//	return ctrl.Result{}, err
+	//}
 
 	return ctrl.Result{}, nil
 }
@@ -242,7 +253,7 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 		Spec: hitoseacomv1.VirtualMachineSnapshotContentSpec{
 			VirtualMachineSnapshotName: &vmSnapshot.Name,
 			Source: hitoseacomv1.SourceSpec{
-				VirtualMachine: hitoseacomv1.VirtualMachine{
+				VirtualMachine: &hitoseacomv1.VirtualMachine{
 					ObjectMeta:     *getSimplifiedMetaObject(vm.ObjectMeta),
 					VirtualMachine: vm,
 				},

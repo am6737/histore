@@ -101,7 +101,7 @@ func (r *VirtualMachineSnapshotContentReconciler) addFinalizerToVmsc(vmsc *hitos
 }
 
 // removeFinalizerFromPVC removes the VR finalizer on PersistentVolumeClaim.
-func (r *VirtualMachineSnapshotContentReconciler) removeFinalizerFromPVC(vmsc *hitoseacomv1.VirtualMachineSnapshotContent,
+func (r *VirtualMachineSnapshotContentReconciler) removeFinalizerFromVmsc(vmsc *hitoseacomv1.VirtualMachineSnapshotContent,
 ) error {
 	if contains(vmsc.ObjectMeta.Finalizers, vmSnapshotContentFinalizer) {
 		r.Log.Info("removing finalizer from VirtualMachineSnapshotContent object", "Finalizer", vmSnapshotContentFinalizer)

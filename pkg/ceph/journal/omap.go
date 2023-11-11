@@ -19,7 +19,7 @@ package journal
 import (
 	"context"
 	"errors"
-	"fmt"
+	"github.com/am6737/histore/pkg/util/log"
 
 	"github.com/am6737/histore/pkg/ceph/util"
 
@@ -76,8 +76,10 @@ func getOMapValues(
 
 	if err != nil {
 		if errors.Is(err, rados.ErrNotFound) {
-			fmt.Println(ctx, "omap not found (pool=%q, namespace=%q, name=%q): %v",
+			log.ErrorLog(ctx, "omap not found (pool=%q, namespace=%q, name=%q): %v",
 				poolName, namespace, oid, err)
+			//fmt.Println(ctx, "omap not found (pool=%q, namespace=%q, name=%q): %v",
+			//	poolName, namespace, oid, err)
 
 			return nil, util.JoinErrors(util.ErrKeyNotFound, err)
 		}
@@ -85,11 +87,11 @@ func getOMapValues(
 		return nil, err
 	}
 
-	//log.DebugLog(ctx, "got omap values: (pool=%q, namespace=%q, name=%q): %+v",
-	//	poolName, namespace, oid, results)
-
-	fmt.Println(ctx, "got omap values: (pool=%q, namespace=%q, name=%q): %+v",
+	log.DebugLog(ctx, "got omap values: (pool=%q, namespace=%q, name=%q): %+v",
 		poolName, namespace, oid, results)
+	//
+	//fmt.Println(ctx, "got omap values: (pool=%q, namespace=%q, name=%q): %+v",
+	//	poolName, namespace, oid, results)
 
 	return results, nil
 }
@@ -116,23 +118,23 @@ func removeMapKeys(
 			// the previous implementation of removing omap keys (via the cli)
 			// treated failure to find the omap as a non-error. Do so here to
 			// mimic the previous behavior.
-			//log.DebugLog(ctx, "when removing omap keys, omap not found (pool=%q, namespace=%q, name=%q): %+v",
-			//	poolName, namespace, oid, keys)
-			fmt.Println(ctx, fmt.Sprintf("when removing omap keys, omap not found (pool=%q, namespace=%q, name=%q): %+v",
-				poolName, namespace, oid, keys))
+			log.DebugLog(ctx, "when removing omap keys, omap not found (pool=%q, namespace=%q, name=%q): %+v",
+				poolName, namespace, oid, keys)
+			//fmt.Println(ctx, fmt.Sprintf("when removing omap keys, omap not found (pool=%q, namespace=%q, name=%q): %+v",
+			//	poolName, namespace, oid, keys))
 		} else {
-			//log.ErrorLog(ctx, "failed removing omap keys (pool=%q, namespace=%q, name=%q): %v",
-			//	poolName, namespace, oid, err)
-			fmt.Println(ctx, fmt.Sprintf("failed removing omap keys (pool=%q, namespace=%q, name=%q): %v",
-				poolName, namespace, oid, err))
+			log.ErrorLog(ctx, "failed removing omap keys (pool=%q, namespace=%q, name=%q): %v",
+				poolName, namespace, oid, err)
+			//fmt.Println(ctx, fmt.Sprintf("failed removing omap keys (pool=%q, namespace=%q, name=%q): %v",
+			//	poolName, namespace, oid, err))
 			return err
 		}
 	}
-	fmt.Println(ctx, fmt.Sprintf("removed omap keys (pool=%q, namespace=%q, name=%q): %+v",
-		poolName, namespace, oid, keys))
+	//fmt.Println(ctx, fmt.Sprintf("removed omap keys (pool=%q, namespace=%q, name=%q): %+v",
+	//	poolName, namespace, oid, keys))
 
-	//log.DebugLog(ctx, "removed omap keys (pool=%q, namespace=%q, name=%q): %+v",
-	//	poolName, namespace, oid, keys)
+	log.DebugLog(ctx, "removed omap keys (pool=%q, namespace=%q, name=%q): %+v",
+		poolName, namespace, oid, keys)
 
 	return nil
 }
@@ -159,16 +161,16 @@ func setOMapKeys(
 	}
 	err = ioctx.SetOmap(oid, bpairs)
 	if err != nil {
-		//log.ErrorLog(ctx, "failed setting omap keys (pool=%q, namespace=%q, name=%q, pairs=%+v): %v",
-		//	poolName, namespace, oid, pairs, err)
-		fmt.Println(ctx, "failed setting omap keys (pool=%q, namespace=%q, name=%q, pairs=%+v): %v",
+		log.ErrorLog(ctx, "failed setting omap keys (pool=%q, namespace=%q, name=%q, pairs=%+v): %v",
 			poolName, namespace, oid, pairs, err)
+		//fmt.Println(ctx, "failed setting omap keys (pool=%q, namespace=%q, name=%q, pairs=%+v): %v",
+		//	poolName, namespace, oid, pairs, err)
 		return err
 	}
-	//log.DebugLog(ctx, "set omap keys (pool=%q, namespace=%q, name=%q): %+v)",
-	//	poolName, namespace, oid, pairs)
-	fmt.Println(ctx, fmt.Sprintf("set omap keys (pool=%q, namespace=%q, name=%q): %+v)",
-		poolName, namespace, oid, pairs))
+	log.DebugLog(ctx, "set omap keys (pool=%q, namespace=%q, name=%q): %+v)",
+		poolName, namespace, oid, pairs)
+	//fmt.Println(ctx, fmt.Sprintf("set omap keys (pool=%q, namespace=%q, name=%q): %+v)",
+	//	poolName, namespace, oid, pairs))
 
 	return nil
 }

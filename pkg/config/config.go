@@ -17,32 +17,91 @@ limitations under the License.
 package config
 
 import (
-	"time"
+	storagev1 "k8s.io/api/storage/v1"
+	"strings"
 )
 
-// DriverConfig holds the CSI driver configuration.
-type DriverConfig struct {
-	// DriverEndpoint represents the gRPC endpoint for CSI driver.
-	MasterDriverEndpoint string
-	// SlaveDriverEndpoint represents the gRPC endpoint for CSI driver.
-	SlaveDriverEndpoint string
-	// DriverName is the name of CSI Driver.
-	DriverName string
-	// RPCTimeout for RPCs to the CSI driver.
-	RPCTimeout time.Duration
+// CephConfig holds the CSI driver configuration.
+type CephConfig struct {
+	MasterStorageClass string
+	SlaveStorageClass  string
+	MasterCephCsiCfg   *CephCsiConfig
+	SlaveCephCsiCfg    *CephCsiConfig
 }
 
-// NewDriverConfig returns the newly initialized DriverConfig.
-func NewDriverConfig() *DriverConfig {
-	return &DriverConfig{}
+// NewDriverConfig returns the newly initialized CephConfig.
+func NewDriverConfig() *CephConfig {
+	return &CephConfig{}
 }
 
 // Validate operation configurations.
-func (cfg *DriverConfig) Validate() error {
+func (cfg *CephConfig) Validate() error {
 	// check driver name is set
 	//if cfg.DriverName == "" {
 	//	return errors.New("driverName is empty")
 	//}
 
 	return nil
+}
+
+type CephCsiConfig struct {
+	ClusterID                       string
+	Driver                          string
+	Pool                            string
+	ControllerExpandSecretName      string
+	ControllerExpandSecretNamespace string
+	NodeStageSecretName             string
+	NodeStageSecretNamespace        string
+	ProvisionerSecretName           string
+	ProvisionerSecretNamespace      string
+	SecretMap                       map[string]string
+	Parameters                      map[string]string
+	ImageFeatures                   map[string]string
+}
+
+func NewCephCsiConfig(sc *storagev1.StorageClass) *CephCsiConfig {
+	config := &CephCsiConfig{
+		SecretMap:     map[string]string{},
+		Parameters:    map[string]string{},
+		ImageFeatures: map[string]string{},
+	}
+	config.Driver = sc.Provisioner
+	if sc.Parameters != nil {
+		if clusterID, ok := sc.Parameters["clusterID"]; ok {
+			config.ClusterID = clusterID
+		}
+		if pool, ok := sc.Parameters["pool"]; ok {
+			config.Pool = pool
+		}
+		if controllerExpandSecretName, ok := sc.Parameters["csi.storage.k8s.io/controller-expand-secret-name"]; ok {
+			config.ControllerExpandSecretName = controllerExpandSecretName
+		}
+		if controllerExpandSecretNamespace, ok := sc.Parameters["csi.storage.k8s.io/controller-expand-secret-namespace"]; ok {
+			config.ControllerExpandSecretNamespace = controllerExpandSecretNamespace
+		}
+		if nodeStageSecretName, ok := sc.Parameters["csi.storage.k8s.io/node-stage-secret-name"]; ok {
+			config.NodeStageSecretName = nodeStageSecretName
+		}
+		if nodeStageSecretNamespace, ok := sc.Parameters["csi.storage.k8s.io/node-stage-secret-namespace"]; ok {
+			config.NodeStageSecretNamespace = nodeStageSecretNamespace
+		}
+		if provisionerSecretName, ok := sc.Parameters["csi.storage.k8s.io/provisioner-secret-name"]; ok {
+			config.ProvisionerSecretName = provisionerSecretName
+		}
+		if provisionerSecretNamespace, ok := sc.Parameters["csi.storage.k8s.io/provisioner-secret-namespace"]; ok {
+			config.ProvisionerSecretNamespace = provisionerSecretNamespace
+		}
+		for key, value := range sc.Parameters {
+			config.Parameters[key] = value
+		}
+	}
+	// Update config fields based on StorageClass imageFeatures
+	if imageFeatures, ok := sc.Parameters["imageFeatures"]; ok {
+		// Assuming imageFeatures is a comma-separated list
+		features := strings.Split(imageFeatures, ",")
+		for _, feature := range features {
+			config.ImageFeatures[feature] = feature
+		}
+	}
+	return config
 }
