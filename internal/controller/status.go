@@ -1,6 +1,8 @@
 package controller
 
 import (
+	hitoseacomv1 "github.com/am6737/histore/api/v1"
+	corev1 "k8s.io/api/core/v1"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -157,4 +159,82 @@ func findCondition(existingConditions []metav1.Condition, conditionType string) 
 	}
 
 	return nil
+}
+
+func newProgressingCondition(status corev1.ConditionStatus, reason string) hitoseacomv1.Condition {
+	return hitoseacomv1.Condition{
+		Type:               hitoseacomv1.ConditionProgressing,
+		Status:             status,
+		Reason:             reason,
+		LastTransitionTime: *currentTime(),
+	}
+}
+
+func newFailureCondition(status corev1.ConditionStatus, reason string) hitoseacomv1.Condition {
+	return hitoseacomv1.Condition{
+		Type:               hitoseacomv1.ConditionFailure,
+		Status:             status,
+		Reason:             reason,
+		LastTransitionTime: *currentTime(),
+	}
+}
+
+func newReadyCondition(status corev1.ConditionStatus, reason string) hitoseacomv1.Condition {
+	return hitoseacomv1.Condition{
+		Type:               hitoseacomv1.ConditionReady,
+		Status:             status,
+		Reason:             reason,
+		LastTransitionTime: *currentTime(),
+	}
+}
+
+func updateSnapshotSnapshotableVolumes(snapshot *hitoseacomv1.VirtualMachineSnapshot, content *hitoseacomv1.VirtualMachineSnapshotContent) {
+	if content == nil {
+		return
+	}
+	vm := content.Spec.Source.VirtualMachine
+	if vm == nil || vm.Spec.Template == nil {
+		return
+	}
+	volumes := vm.Spec.Template.Spec.Volumes
+
+	volumeBackups := make(map[string]bool)
+	for _, volumeBackup := range content.Spec.VolumeBackups {
+		volumeBackups[volumeBackup.VolumeName] = true
+	}
+
+	var excludedVolumes []string
+	var includedVolumes []string
+	for _, volume := range volumes {
+		if _, ok := volumeBackups[volume.Name]; ok {
+			includedVolumes = append(includedVolumes, volume.Name)
+		} else {
+			excludedVolumes = append(excludedVolumes, volume.Name)
+		}
+	}
+	snapshot.Status.SnapshotVolumes = &hitoseacomv1.SnapshotVolumesLists{
+		IncludedVolumes: includedVolumes,
+		ExcludedVolumes: excludedVolumes,
+	}
+}
+
+func updateSnapshotCondition(ss *hitoseacomv1.VirtualMachineSnapshot, c hitoseacomv1.Condition) {
+	ss.Status.Conditions = updateCondition(ss.Status.Conditions, c, false)
+}
+
+func updateCondition(conditions []hitoseacomv1.Condition, c hitoseacomv1.Condition, includeReason bool) []hitoseacomv1.Condition {
+	found := false
+	for i := range conditions {
+		if conditions[i].Type == c.Type {
+			if conditions[i].Status != c.Status || (includeReason && conditions[i].Reason != c.Reason) {
+				conditions[i] = c
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		conditions = append(conditions, c)
+	}
+	return conditions
 }

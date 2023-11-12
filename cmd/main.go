@@ -21,6 +21,7 @@ import (
 	"github.com/am6737/histore/pkg/config"
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
+	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	"os"
 	"time"
 
@@ -60,6 +61,8 @@ func init() {
 
 	utilruntime.Must(snapshotv1.AddToScheme(scheme))
 
+	utilruntime.Must(cdiv1.AddToScheme(scheme))
+
 	utilruntime.Must(hitoseacomv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
@@ -69,8 +72,8 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	cfg := config.NewDriverConfig()
-	flag.StringVar(&cfg.MasterStorageClass, "master-storage-class", "csi-cephfsplugin-snapclass", "Address of the CSI driver socket.")
-	flag.StringVar(&cfg.SlaveStorageClass, "slave-storage-class", "csi-cephfsplugin-snapclass-slave", "Address of the Slave CSI driver socket.")
+	flag.StringVar(&cfg.MasterStorageClass, "master-storage-class", "csi-cephrdb-sc-master", "Address of the CSI driver socket.")
+	flag.StringVar(&cfg.SlaveStorageClass, "slave-storage-class", "csi-cephrdb-sc-slave", "Address of the Slave CSI driver socket.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,

@@ -22,9 +22,11 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,13 +41,18 @@ import (
 
 const (
 	defaultVolumeSnapshotClassAnnotation = "snapshot.storage.kubernetes.io/is-default-class"
+
+	vmSnapshotContentCreateEvent = "SuccessfulVirtualMachineSnapshotContentCreate"
+
+	vmSnapshotDeadlineExceededError = "snapshot deadline exceeded"
 )
 
 // VirtualMachineSnapshotReconciler reconciles a VirtualMachineSnapshot object
 type VirtualMachineSnapshotReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	Log    logr.Logger
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
+	Log      logr.Logger
 }
 
 //+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachinesnapshots,verbs=get;list;watch;create;update;patch;delete
@@ -95,11 +102,6 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	// Make sure status is initialized before doing anything
-	if vmSnapshot.Status == nil {
-		vmSnapshot.Status = &hitoseacomv1.VirtualMachineSnapshotStatus{}
-	}
-
-	// Make sure status is initialized before doing anything
 	//if vmSnapshot.Status.VirtualMachineSnapshotContentName == nil {
 	//	//if source != nil {
 	//	if vmSnapshotProgressing(vmSnapshot) && !vmSnapshotTerminating(vmSnapshot) {
@@ -115,36 +117,28 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 
 	// create content if does not exist
 	if content == nil {
-		if err := r.createContent(vmSnapshot); err != nil {
+		if err = r.createContent(vmSnapshot); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
 	if vmSnapshotTerminating(vmSnapshot) && content != nil {
-		r.Log.Info("Deleting vmsnapshotcontent", content.Namespace, content.Name)
-		//if err = r.Client.Delete(ctx, content); err != nil {
-		//	return ctrl.Result{}, err
-		//}
-		// 移除终结器
+		// Delete content if that's the policy or if the snapshot
+		// is marked to be deleted and the content is not ready yet
+		// - no point of keeping an unready content
+		if shouldDeleteContent(vmSnapshot, content) {
+			r.Log.Info("Deleting vmsnapshotcontent", "namespace", content.Namespace, "name", content.Name)
+
+			if err = r.Delete(ctx, content); err != nil && !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, err
+			}
+		} else {
+			r.Log.Info("NOT deleting vmsnapshotcontent %s/%s", "namespace", content.Namespace, "name", content.Name)
+		}
 	}
 
-	if vmSnapshotDeleting(vmSnapshot) {
-		// Enable the vmsnapshot to be deleted only in case it completed
-		// or after waiting until the content is deleted if needed
-		//if !vmSnapshotProgressing(vmSnapshot) || contentDeletedIfNeeded(vmSnapshotCpy, content) {
-		//}
-		RemoveFinalizer(vmSnapshot, vmSnapshotFinalizer)
-	} else {
-		// since no status subresource can update metadata and status
-		AddFinalizer(vmSnapshot, vmSnapshotFinalizer)
-
-		if content != nil && content.Status != nil {
-			// content exists and is initialized
-			//vmSnapshot.Status.VirtualMachineSnapshotContentName = &content.Name
-			//vmSnapshot.Status.CreationTime = content.Status.CreationTime
-			//vmSnapshot.Status.ReadyToUse = content.Status.ReadyToUse
-			//vmSnapshot.Status.Error = content.Status.Error
-		}
+	if err = r.updateSnapshotStatus(vmSnapshot); err != nil {
+		return reconcile.Result{}, err
 	}
 
 	_, err = r.getVM(vmSnapshot)
@@ -157,26 +151,16 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		return reconcile.Result{}, nil
 	}
 
-	// TODO: 在这里根据情况更新状态字段
-	// vmSnapshot.Status.Phase = ...
-	// vmSnapshot.Status.ReadyToUse = ...
-	// vmSnapshot.Status.Error = ...
-	// vmSnapshot.Status.CreationTime = ...
-	//vmSnapshotCpy := &hitoseacomv1.VirtualMachineSnapshot{}
-	//if err := r.Get(context.TODO(), client.ObjectKey{Namespace: vmSnapshot.Namespace, Name: vmSnapshot.Name}, vmSnapshotCpy); err != nil {
-	//	return ctrl.Result{}, err
-	//}
-	//contentName := GetVMSnapshotContentName(vmSnapshot)
-	//vmSnapshotCpy.Status.SourceUID = &vm.UID
-	//vmSnapshotCpy.Status.VirtualMachineSnapshotContentName = &contentName
-	//
-	//// 更新 VirtualMachineSnapshot 对象的状态
-	//if err := r.Status().Update(ctx, vmSnapshotCpy); err != nil {
-	//	logger.Error(err, "无法更新 VirtualMachineSnapshot 对象的状态")
-	//	return ctrl.Result{}, err
-	//}
-
 	return ctrl.Result{}, nil
+}
+
+func shouldDeleteContent(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot, content *hitoseacomv1.VirtualMachineSnapshotContent) bool {
+	return deleteContentPolicy(vmSnapshot) || !vmSnapshotContentReady(content)
+}
+
+func deleteContentPolicy(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
+	return vmSnapshot.Spec.DeletionPolicy == nil ||
+		*vmSnapshot.Spec.DeletionPolicy == hitoseacomv1.VirtualMachineSnapshotContentDelete
 }
 
 func vmSnapshotTerminating(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
@@ -231,7 +215,6 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 	//if err != nil {
 	//	return err
 	vm.Status = kubevirtv1.VirtualMachineStatus{}
-
 	content := &hitoseacomv1.VirtualMachineSnapshotContent{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       GetVMSnapshotContentName(vmSnapshot),
@@ -262,18 +245,17 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 		},
 	}
 
-	if err := r.Client.Create(context.Background(), content, &client.CreateOptions{}); err != nil {
+	if err = r.Client.Create(context.Background(), content); err != nil {
 		return err
 	}
 
-	//
-	//ctrl.Recorder.Eventf(
-	//	vmSnapshot,
-	//	corev1.EventTypeNormal,
-	//	vmSnapshotContentCreateEvent,
-	//	"Successfully created VirtualMachineSnapshotContent %s",
-	//	content.Name,
-	//)
+	r.Recorder.Eventf(
+		vmSnapshot,
+		corev1.EventTypeNormal,
+		vmSnapshotContentCreateEvent,
+		"Successfully created VirtualMachineSnapshotContent %s",
+		content.Name,
+	)
 
 	return nil
 }
@@ -450,6 +432,77 @@ func (r *VirtualMachineSnapshotReconciler) SetupWithManager(mgr ctrl.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&hitoseacomv1.VirtualMachineSnapshot{}).
 		Complete(r)
+}
+
+func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) error {
+	f := false
+	vmSnapshotCpy := vmSnapshot.DeepCopy()
+	if vmSnapshotCpy.Status == nil {
+		vmSnapshotCpy.Status = &hitoseacomv1.VirtualMachineSnapshotStatus{
+			ReadyToUse: &f,
+		}
+	}
+
+	content, err := r.getContent(vmSnapshot)
+	if err != nil {
+		return err
+	}
+
+	if vmSnapshotDeleting(vmSnapshotCpy) {
+		// Enable the vmsnapshot to be deleted only in case it completed
+		// or after waiting until the content is deleted if needed
+		if !vmSnapshotProgressing(vmSnapshot) || contentDeletedIfNeeded(vmSnapshotCpy, content) {
+			RemoveFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
+		}
+	} else {
+		// since no status subresource can update metadata and status
+		AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
+
+		if content != nil && content.Status != nil {
+			// content exists and is initialized
+			vmSnapshotCpy.Status.VirtualMachineSnapshotContentName = &content.Name
+			vmSnapshotCpy.Status.CreationTime = content.Status.CreationTime
+			vmSnapshotCpy.Status.ReadyToUse = content.Status.ReadyToUse
+			vmSnapshotCpy.Status.Error = content.Status.Error
+		}
+	}
+
+	if vmSnapshotDeadlineExceeded(vmSnapshotCpy) {
+		vmSnapshotCpy.Status.Phase = hitoseacomv1.Failed
+		updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionFalse, vmSnapshotDeadlineExceededError))
+		updateSnapshotCondition(vmSnapshotCpy, newFailureCondition(corev1.ConditionTrue, vmSnapshotDeadlineExceededError))
+	} else if vmSnapshotProgressing(vmSnapshotCpy) {
+		vmSnapshotCpy.Status.Phase = hitoseacomv1.InProgress
+		// TODO source status update 暂时省略
+		updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionFalse, "Not ready"))
+		if vmSnapshotDeleting(vmSnapshotCpy) {
+			vmSnapshotCpy.Status.Phase = hitoseacomv1.Deleting
+			updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionFalse, "VM snapshot is deleting"))
+			updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionFalse, "VM snapshot is deleting"))
+		}
+	} else if vmSnapshotError(vmSnapshotCpy) != nil {
+		updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionFalse, "In error state"))
+		updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionFalse, "Error"))
+	} else if VmSnapshotReady(vmSnapshotCpy) {
+		vmSnapshotCpy.Status.Phase = hitoseacomv1.Succeeded
+		updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionFalse, "Operation complete"))
+		updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionTrue, "Operation complete"))
+		updateSnapshotSnapshotableVolumes(vmSnapshotCpy, content)
+	} else {
+		vmSnapshotCpy.Status.Phase = hitoseacomv1.Unknown
+		updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionUnknown, "Unknown state"))
+		updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionUnknown, "Unknown state"))
+	}
+
+	if !equality.Semantic.DeepEqual(vmSnapshot, vmSnapshotCpy) {
+		return r.Update(context.Background(), vmSnapshotCpy)
+	}
+
+	return nil
+}
+
+func contentDeletedIfNeeded(cpy *hitoseacomv1.VirtualMachineSnapshot, content *hitoseacomv1.VirtualMachineSnapshotContent) bool {
+	return false
 }
 
 func GetPVCsFromVolumes(volumes []kubevirtv1.Volume) map[string]string {

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"github.com/am6737/histore/pkg/config"
 	"github.com/go-logr/logr"
+	"github.com/gookit/goutil/dump"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -129,6 +130,20 @@ func (r *VirtualMachineRestoreReconciler) Reconcile(ctx context.Context, req ctr
 	//if !equality.Semantic.DeepEqual(vmRestoreIn, vmRestoreOut) {
 	//	return ctrl.Result{}, r.doUpdate(vmRestoreIn, vmRestoreOut)
 	//}
+	//
+	//dv := &cdi.DataVolume{}
+	//if err = r.Client.Get(context.TODO(), client.ObjectKey{Namespace: "default", Name: "vm-1-pvc"}, dv); err != nil {
+	//	return ctrl.Result{}, err
+	//}
+	//dump.Println(dv.Status)
+	//
+	//dvCpy := dv.DeepCopy()
+	//dvCpy.Name = "restore-90e17ec1-dbdc-421c-b0fb-387303340795-datavolumedisk1"
+	////dvCpy.Status.ClaimName = "restore-90e17ec1-dbdc-421c-b0fb-387303340795-datavolumedisk1"
+	//if err = r.Client.Update(context.TODO(), dvCpy); err != nil {
+	//	return ctrl.Result{}, err
+	//}
+	//dump.Println(dvCpy.Name)
 
 	fmt.Println("------------2")
 
@@ -139,6 +154,7 @@ func (r *VirtualMachineRestoreReconciler) Reconcile(ctx context.Context, req ctr
 	}
 	if updated {
 		r.Log.Info("reconcileVolumeRestores updated")
+		return ctrl.Result{}, nil
 		//updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Creating new PVCs"))
 		//updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for new PVCs"))
 		//return 0, ctrl.doUpdate(vmRestoreIn, vmRestoreOut)
@@ -162,16 +178,33 @@ func (r *VirtualMachineRestoreReconciler) Reconcile(ctx context.Context, req ctr
 		}, err
 	}
 
-	updated, err = target.Reconcile()
-	if err != nil {
-		r.Log.Error(err, "Error reconciling target")
-		return ctrl.Result{}, err
-	}
-	if updated {
-		//updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Updating target spec"))
-		//updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for target update"))
-		return ctrl.Result{}, nil
-	}
+	//updated, err = target.Reconcile()
+	//if err != nil {
+	//	r.Log.Error(err, "Error reconciling target")
+	//	return ctrl.Result{}, err
+	//}
+	//if updated {
+	//	fmt.Println("target updated")
+	//	//updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Updating target spec"))
+	//	//updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for target update"))
+	//	//return ctrl.Result{}, nil
+	//}
+	//
+	//if err = target.Cleanup(); err != nil {
+	//	r.Log.Error(err, "Error cleaning up")
+	//	return ctrl.Result{}, err
+	//}
+	//
+	//updated, err = target.UpdateDoneRestore()
+	//if err != nil {
+	//	r.Log.Error(err, "Error updating done restore")
+	//	return ctrl.Result{}, err
+	//}
+	//if updated {
+	//	//updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Updating target status"))
+	//	//updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for target update"))
+	//	return ctrl.Result{}, nil
+	//}
 
 	return ctrl.Result{}, nil
 }
@@ -228,26 +261,33 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 	createdPVC := false
 	waitingPVC := false
 	for _, restore := range restores {
+		dump.Println(restore)
 		pvc, err := r.getPVC(vmRestore.Namespace, restore.PersistentVolumeClaimName)
 		if err != nil {
 			return false, err
 		}
-
 		if pvc == nil {
+			fmt.Println("1426 1")
 			backup, err := getRestoreVolumeBackup(restore.VolumeName, content)
 			if err != nil {
+				log.Log.Error(err, "getRestoreVolumeBackup")
 				return false, err
 			}
+			fmt.Println("1426 2")
 			if err = r.createRestorePVC(vmRestore, target, backup, &restore, content.Spec.Source.VirtualMachine.Name, content.Spec.Source.VirtualMachine.Namespace); err != nil {
+				log.Log.Error(err, "createRestorePVC")
 				return false, err
 			}
+			fmt.Println("1426 3")
 			createdPVC = true
 		} else if pvc.Status.Phase == corev1.ClaimPending {
+			fmt.Println("1426 4")
 			bindingMode, err := r.getBindingMode(pvc)
 			if err != nil {
+				log.Log.Error(err, "getBindingMode")
 				return false, err
 			}
-
+			fmt.Println("1426 5")
 			if bindingMode == nil || *bindingMode == storagev1.VolumeBindingImmediate {
 				waitingPVC = true
 			}
@@ -374,6 +414,7 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacom
 	pvc.Namespace = corev1.NamespaceDefault
 	//pvc := CreateRestorePVCDefFromVMRestore(vmRestore.Name, volumeRestore.PersistentVolumeClaimName, volumeSnapshot, volumeBackup, sourceVmName, sourceVmNamespace)
 	target.Own(pvc)
+	dump.P(pvc.Name)
 	if err := r.Client.Create(context.TODO(), pvc, &client.CreateOptions{}); err != nil {
 		log.Log.Error(err, "create pvc")
 		return err
@@ -392,13 +433,15 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacom
 		return err
 	}
 
-	pv := r.CreateRestoreStaticPVDefFromVMRestore(oldPv, ssc, "0001-0024-5e709abc-419e-11ee-a132-af7f7bf3bfc0-0000000000000002-8df91d22-c1bc-45d0-83b2-c6b74f107777")
+	fmt.Println("createRestorePVC ssc => ", ssc)
+
+	pv := r.CreateRestoreStaticPVDefFromVMRestore(oldPv, ssc, "0001-0024-5e709abc-419e-11ee-a132-af7f7bf3bfc0-0000000000000002-863116c1-fca9-499a-9f6d-b1185a6bb06c")
 	pv.Name = "pvc-" + string(pvc.UID)
 	if err := r.Client.Create(context.TODO(), pv, &client.CreateOptions{}); err != nil {
 		return err
 	}
 
-	r.Log.Info("restore pv created successfully", "namespace", pv.Namespace, "name", pv.Namespace)
+	r.Log.Info("restore pv created successfully", "namespace", pv.Namespace, "name", pv.Name)
 
 	pvc.Spec.VolumeName = pv.Name
 	// pvc Binding pv
@@ -484,19 +527,22 @@ func CreateRestoreStaticPVDef(pv *corev1.PersistentVolume, ssc *config.CephCsiCo
 			},
 			StorageClassName:              "",
 			AccessModes:                   pv.Spec.AccessModes,
-			PersistentVolumeReclaimPolicy: pv.Spec.PersistentVolumeReclaimPolicy,
+			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
 			MountOptions:                  pv.Spec.MountOptions,
 			VolumeMode:                    pv.Spec.VolumeMode,
 		},
 	}
-	newPv.Spec.CSI.VolumeHandle = slaveVolumeHandle
+	newPv.Spec.CSI.VolumeHandle = "csi-vol-544e294c-510e-4e08-b40f-7f3a09438cc3"
 	newPv.Spec.CSI.Driver = ssc.Driver
 	newPv.Spec.CSI.VolumeAttributes["clusterID"] = ssc.ClusterID
-	delete(newPv.Spec.CSI.VolumeAttributes, newPv.Spec.CSI.VolumeAttributes["storage.kubernetes.io/csiProvisionerIdentity"])
+	newPv.Spec.CSI.VolumeAttributes["staticVolume"] = "true"
 	newPv.Spec.CSI.NodeStageSecretRef.Name = ssc.NodeStageSecretName
-	newPv.Spec.CSI.NodeStageSecretRef.Name = ssc.NodeStageSecretNamespace
+	newPv.Spec.CSI.NodeStageSecretRef.Namespace = ssc.NodeStageSecretNamespace
 	newPv.Spec.CSI.ControllerExpandSecretRef.Name = ssc.ControllerExpandSecretName
-	newPv.Spec.CSI.ControllerExpandSecretRef.Name = ssc.ControllerExpandSecretNamespace
+	newPv.Spec.CSI.ControllerExpandSecretRef.Namespace = ssc.ControllerExpandSecretNamespace
+	delete(newPv.Spec.CSI.VolumeAttributes, "journalPool")
+	delete(newPv.Spec.CSI.VolumeAttributes, "imageName")
+	delete(newPv.Spec.CSI.VolumeAttributes, "storage.kubernetes.io/csiProvisionerIdentity")
 	return newPv
 }
 

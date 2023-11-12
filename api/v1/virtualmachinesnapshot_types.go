@@ -80,15 +80,61 @@ type VirtualMachineSnapshotStatus struct {
 	// +optional
 	Error *Error `json:"error,omitempty"`
 
-	//// +optional
-	//Conditions []Condition `json:"conditions,omitempty"`
+	// +optional
+	Conditions []Condition `json:"conditions,omitempty"`
 	//
 	//// +optional
 	//// +listType=set
 	//Indications []Indication `json:"indications,omitempty"`
 
 	// +optional
-	//SnapshotVolumes *SnapshotVolumesLists `json:"snapshotVolumes,omitempty"`
+	SnapshotVolumes *SnapshotVolumesLists `json:"snapshotVolumes,omitempty"`
+}
+
+// SnapshotVolumesLists includes the list of volumes which were included in the snapshot and volumes which were excluded from the snapshot
+type SnapshotVolumesLists struct {
+	// +optional
+	// +listType=set
+	IncludedVolumes []string `json:"includedVolumes,omitempty"`
+
+	// +optional
+	// +listType=set
+	ExcludedVolumes []string `json:"excludedVolumes,omitempty"`
+}
+
+// ConditionType is the const type for Conditions
+type ConditionType string
+
+const (
+	// ConditionReady is the "ready" condition type
+	ConditionReady ConditionType = "Ready"
+
+	// ConditionProgressing is the "progressing" condition type
+	ConditionProgressing ConditionType = "Progressing"
+
+	// ConditionFailure is the "failure" condition type
+	ConditionFailure ConditionType = "Failure"
+)
+
+// Condition defines conditions
+type Condition struct {
+	Type ConditionType `json:"type"`
+
+	Status corev1.ConditionStatus `json:"status"`
+
+	// +optional
+	// +nullable
+	LastProbeTime metav1.Time `json:"lastProbeTime,omitempty"`
+
+	// +optional
+	// +nullable
+	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
+
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// +optional
+	Message string `json:"message,omitempty"`
 }
 
 // VirtualMachineSnapshotPhase is the current phase of the VirtualMachineSnapshot
@@ -127,6 +173,10 @@ type PersistentVolumeClaim struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:resource:shortName=hvms
+//+kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
+//+kubebuilder:printcolumn:name="ReadyToUse",type="bool",JSONPath=".status.readyToUse"
+//+kubebuilder:printcolumn:name="creationTime",type="string",JSONPath=".status.creationTime"
 
 // VirtualMachineSnapshot is the Schema for the virtualmachinesnapshots API
 type VirtualMachineSnapshot struct {

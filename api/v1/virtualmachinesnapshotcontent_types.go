@@ -104,7 +104,9 @@ type VirtualMachineSnapshotContentStatus struct {
 
 // VolumeStatus is the status of a VolumeSnapshot
 type VolumeStatus struct {
-	VolumeHandle string `json:"volumeHandle"`
+	VolumeHandle string `json:"volumeHandle,omitempty"`
+
+	VolumeName string `json:"volumeName,omitempty"`
 
 	// +optional
 	Phase VirtualMachineSnapshotContentPhase `json:"phase,omitempty"`
