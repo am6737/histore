@@ -146,7 +146,7 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	if err := r.Status().Update(ctx, vmSnapshot); err != nil {
+	if err = r.Status().Update(ctx, vmSnapshot); err != nil {
 		logger.Error(err, "无法更新 VirtualMachineSnapshot 对象的状态")
 		return reconcile.Result{}, nil
 	}
@@ -370,7 +370,7 @@ func VmSnapshotReady(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
 }
 
 func vmSnapshotContentReady(vmSnapshotContent *hitoseacomv1.VirtualMachineSnapshotContent) bool {
-	return vmSnapshotContent.Status != nil && vmSnapshotContent.Status.ReadyToUse != nil && *vmSnapshotContent.Status.ReadyToUse
+	return vmSnapshotContent.Status.ReadyToUse != nil && *vmSnapshotContent.Status.ReadyToUse
 }
 
 func vmSnapshotError(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) *hitoseacomv1.Error {
@@ -452,13 +452,13 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		// Enable the vmsnapshot to be deleted only in case it completed
 		// or after waiting until the content is deleted if needed
 		if !vmSnapshotProgressing(vmSnapshot) || contentDeletedIfNeeded(vmSnapshotCpy, content) {
-			RemoveFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
+			//RemoveFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
 		}
 	} else {
 		// since no status subresource can update metadata and status
 		//AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
 
-		if content != nil && content.Status != nil {
+		if content != nil {
 			// content exists and is initialized
 			vmSnapshotCpy.Status.VirtualMachineSnapshotContentName = &content.Name
 			vmSnapshotCpy.Status.CreationTime = content.Status.CreationTime

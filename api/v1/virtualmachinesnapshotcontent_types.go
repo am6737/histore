@@ -131,8 +131,8 @@ type VirtualMachineSnapshotContent struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   VirtualMachineSnapshotContentSpec    `json:"spec,omitempty"`
-	Status *VirtualMachineSnapshotContentStatus `json:"status,omitempty"`
+	Spec   VirtualMachineSnapshotContentSpec   `json:"spec,omitempty"`
+	Status VirtualMachineSnapshotContentStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
