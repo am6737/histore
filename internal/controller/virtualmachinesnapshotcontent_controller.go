@@ -116,13 +116,14 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 	currentlyError := content.Status.Error != nil
 
 	if content.Status.VolumeStatus == nil {
+		fmt.Println("create  content.Status.VolumeStatus ")
 		f := false
-		content.Status.ReadyToUse = &f
+		content.Status.ReadyToUse = f
 		for _, v := range content.Spec.VolumeBackups {
 			content.Status.VolumeStatus = append(content.Status.VolumeStatus, hitoseacomv1.VolumeStatus{
 				VolumeName: v.VolumeName,
 				Phase:      0,
-				ReadyToUse: &f,
+				ReadyToUse: f,
 			})
 		}
 		if err := r.Status().Update(ctx, content); err != nil {
@@ -138,6 +139,11 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 	for _, volumeBackup := range content.Spec.VolumeBackups {
 		if volumeBackup.VolumeSnapshotName == nil {
 			continue
+		}
+		for _, v := range content.Status.VolumeStatus {
+			if v.VolumeName == volumeBackup.VolumeName && v.ReadyToUse {
+				continue
+			}
 		}
 
 		vsName := *volumeBackup.VolumeSnapshotName
@@ -171,7 +177,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		success, err := r.CreateVolume(ctx, pv.Spec.CSI.VolumeHandle, content, &volumeBackup)
 		if err != nil {
 			r.Log.Error(err, "CreateVolume")
-			return ctrl.Result{}, err
+			continue
 		}
 
 		if success {
@@ -179,28 +185,36 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		}
 	}
 
+	fmt.Println(" 112 content.Status.VolumeStatus => ", content.Status.VolumeStatus)
+
 	//// 更新 ReadyToUse 状态
-	//updateReadyToUseStatus := func() error {
-	//	//f := false
-	//	t := true
-	//	for i, vStatus := range content.Status.VolumeStatus {
-	//		if vStatus.VolumeName != completionList[i] {
-	//			return nil
-	//		}
-	//	}
-	//	// 如果所有卷都匹配，设置 ReadyToUse 为 true
-	//	content.Status.ReadyToUse = &t
-	//	patch := client.MergeFrom(content.DeepCopy())
-	//	return r.Status().Patch(ctx, content, patch)
-	//}
-	//
-	//// 执行 ReadyToUse 更新
-	//if err := updateReadyToUseStatus(); err != nil {
-	//	return reconcile.Result{
-	//		Requeue:      true,
-	//		RequeueAfter: 5 * time.Second,
-	//	}, err
-	//}
+	updateReadyToUseStatus := func() error {
+		newContent := &hitoseacomv1.VirtualMachineSnapshotContent{}
+		if err := r.Get(ctx, req.NamespacedName, newContent); err != nil {
+			return err
+		}
+		//f := false
+		complete := 0
+		for _, vStatus := range newContent.Status.VolumeStatus {
+			if vStatus.ReadyToUse {
+				complete++
+			}
+		}
+		if complete == len(newContent.Status.VolumeStatus) {
+			// 如果所有卷都匹配，设置 ReadyToUse 为 true
+			newContent.Status.ReadyToUse = true
+			return r.Status().Update(ctx, newContent)
+		}
+		return nil
+	}
+
+	// 执行 ReadyToUse 更新
+	if err := updateReadyToUseStatus(); err != nil {
+		return reconcile.Result{
+			Requeue:      true,
+			RequeueAfter: 5 * time.Second,
+		}, err
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -396,6 +410,25 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 		return false, err
 	}
 
+	vindex := 0
+	is := false
+	for k, v := range contentCpy.Status.VolumeStatus {
+		if v.VolumeName == volumeBackup.VolumeName {
+			is = true
+			vindex = k
+			break
+		}
+	}
+
+	if !is {
+		r.Log.Info("status异常")
+		return false, nil
+	}
+
+	if contentCpy.Status.VolumeStatus[vindex].ReadyToUse == true {
+		return false, nil
+	}
+
 	msc, err := getCephCsiConfigForSC(r.Client, r.MasterScName)
 	if err != nil {
 		r.Log.Error(err, "getCephCsiConfigForSC")
@@ -467,10 +500,6 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 	//	return false, err
 	//}
 
-	fmt.Println(" ----------------------0")
-
-	dump.P(msc)
-
 	//cloneRbd, err := rbd.GenVolFromVolID(ctx, GetCloneVolumeHandleFromVolumeHandle(masterVolumeHandle, sRbdName), masterCr, masterSecret)
 	//defer cloneRbd.Destroy()
 	//if err != nil {
@@ -478,36 +507,14 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 	//	return false, err
 	//}
 
-	fmt.Println(" ----------------------1")
-
 	slaveVolumeHandle := GenerateSlaveVolumeHandle(masterVolumeHandle, ssc.ClusterID, sRbdName)
-	r.Recorder.Eventf(contentCpy, corev1.EventTypeNormal, volumeCloneCreateEvent, "Successfully created VolumeHandle %s", slaveVolumeHandle)
 
 	const (
 		scheduleSyncPeriod = 5 * time.Second
 		TTL                = 3 * time.Minute
 	)
-	fmt.Println(" ----------------------2")
 
 	dump.P("contentCpy.Status.VolumeStatus => ", contentCpy.Status.VolumeStatus)
-	vindex := 0
-	is := false
-	for k, v := range contentCpy.Status.VolumeStatus {
-		if v.VolumeName == volumeBackup.VolumeName {
-			is = true
-			vindex = k
-			break
-		}
-	}
-
-	if !is {
-		r.Log.Info("status异常")
-		return false, nil
-	}
-
-	if *contentCpy.Status.VolumeStatus[vindex].ReadyToUse == true {
-		return false, nil
-	}
 
 	DemoteImageHandler := func(rbdVol *rbd.RbdVolume) error {
 		//contentCpy.Status.VolumeStatus[vindex].Phase = hitoseacomv1.VolumeDemote
@@ -756,13 +763,12 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 		return false, err
 	}
 
-	t := true
 	if err = r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
 		VolumeName:         volumeBackup.VolumeName,
 		Phase:              hitoseacomv1.Complete,
 		MasterVolumeHandle: masterVolumeHandle,
 		SlaveVolumeHandle:  slaveVolumeHandle,
-		ReadyToUse:         &t,
+		ReadyToUse:         true,
 	}); err != nil {
 		if apierrors.IsConflict(err) {
 			log.Log.V(0).Info("Retrying with patch due to conflict error")
@@ -775,23 +781,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 		return false, err
 	}
 
-	//t := true
-	//contentCpy.Status.VolumeStatus[vindex].MasterVolumeHandle = masterVolumeHandle
-	//contentCpy.Status.VolumeStatus[vindex].SlaveVolumeHandle = slaveVolumeHandle
-	//contentCpy.Status.VolumeStatus[vindex].Phase = hitoseacomv1.Complete
-	//contentCpy.Status.VolumeStatus[vindex].ReadyToUse = &t
-	//if err = r.Status().Update(ctx, contentCpy); err != nil {
-	//	log.Log.V(0).Error(err, "s 4")
-	//	if apierrors.IsConflict(err) {
-	//		log.Log.V(0).Info("Retrying with patch due to conflict error")
-	//		patch := client.MergeFrom(contentCpy.DeepCopy())
-	//		if err = r.Client.Status().Patch(context.Background(), content, patch); err != nil {
-	//			r.Log.Error(err, "Failed to update VirtualMachineSnapshotContent status")
-	//			return false, err
-	//		}
-	//	}
-	//	return false, err
-	//}
+	r.Recorder.Eventf(contentCpy, corev1.EventTypeNormal, volumeCloneCreateEvent, "Successfully created VolumeHandle %s", slaveVolumeHandle)
 
 	r.Log.Info("sync rbd complete")
 
@@ -948,19 +938,18 @@ func (r *VirtualMachineSnapshotContentReconciler) rbdHandler(ctx context.Context
 	}
 
 	if !is {
-		f := false
 		content.Status.VolumeStatus = append(content.Status.VolumeStatus, hitoseacomv1.VolumeStatus{
 			MasterVolumeHandle: masterVolumeHandle,
 			SlaveVolumeHandle:  slaveVolumeHandle,
 			VolumeName:         volumeBackup.VolumeName,
 			Phase:              hitoseacomv1.EnableReplication,
-			CreationTime:       currentTime(),
-			ReadyToUse:         &f,
+			CreationTime:       *currentTime(),
+			ReadyToUse:         false,
 		})
 		vindex = len(content.Status.VolumeStatus) - 1
 	}
 
-	if *content.Status.VolumeStatus[vindex].ReadyToUse == true {
+	if content.Status.VolumeStatus[vindex].ReadyToUse == true {
 		return nil
 	}
 
@@ -1252,9 +1241,8 @@ func (r *VirtualMachineSnapshotContentReconciler) rbdHandler(ctx context.Context
 	//	return err
 	//}
 
-	t := true
 	content.Status.VolumeStatus[vindex].Phase = hitoseacomv1.Complete
-	content.Status.VolumeStatus[vindex].ReadyToUse = &t
+	content.Status.VolumeStatus[vindex].ReadyToUse = true
 	if err = r.Status().Update(ctx, content); err != nil {
 		log.Log.V(0).Error(err, "s 4")
 		return err
