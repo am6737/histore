@@ -146,7 +146,7 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	if err := r.Update(ctx, vmSnapshot); err != nil {
+	if err := r.Status().Update(ctx, vmSnapshot); err != nil {
 		logger.Error(err, "无法更新 VirtualMachineSnapshot 对象的状态")
 		return reconcile.Result{}, nil
 	}
@@ -217,9 +217,9 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 	vm.Status = kubevirtv1.VirtualMachineStatus{}
 	content := &hitoseacomv1.VirtualMachineSnapshotContent{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       GetVMSnapshotContentName(vmSnapshot),
-			Namespace:  vmSnapshot.Namespace,
-			Finalizers: []string{vmSnapshotContentFinalizer},
+			Name:      GetVMSnapshotContentName(vmSnapshot),
+			Namespace: vmSnapshot.Namespace,
+			//Finalizers: []string{vmSnapshotContentFinalizer},
 			Annotations: map[string]string{
 				prefixedSnapshotDeleteSecretNameKey:      "csi-ceph-secret-slave",
 				prefixedSnapshotDeleteSecretNamespaceKey: "default",
@@ -456,7 +456,7 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		}
 	} else {
 		// since no status subresource can update metadata and status
-		AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
+		//AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
 
 		if content != nil && content.Status != nil {
 			// content exists and is initialized

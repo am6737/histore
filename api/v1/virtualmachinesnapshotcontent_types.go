@@ -83,12 +83,6 @@ const (
 // VirtualMachineSnapshotContentStatus defines the observed state of VirtualMachineSnapshotContent
 type VirtualMachineSnapshotContentStatus struct {
 	// +optional
-	Phase VirtualMachineSnapshotContentPhase `json:"phase,omitempty"`
-
-	// +optional
-	VolumeHandle *string `json:"volumeHandle,omitempty"`
-
-	// +optional
 	// +nullable
 	CreationTime *metav1.Time `json:"creationTime,omitempty"`
 
@@ -104,8 +98,13 @@ type VirtualMachineSnapshotContentStatus struct {
 
 // VolumeStatus is the status of a VolumeSnapshot
 type VolumeStatus struct {
-	VolumeHandle string `json:"volumeHandle,omitempty"`
+	// +optional
+	MasterVolumeHandle string `json:"masterVolumeHandle,omitempty"`
 
+	// +optional
+	SlaveVolumeHandle string `json:"slaveVolumeHandle,omitempty"`
+
+	// +optional
 	VolumeName string `json:"volumeName,omitempty"`
 
 	// +optional
@@ -124,6 +123,8 @@ type VolumeStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:printcolumn:name="ReadyToUse",type="boolean",JSONPath=".status.readyToUse"
+//+kubebuilder:printcolumn:name="creationTime",type="string",JSONPath=".status.creationTime"
 
 // VirtualMachineSnapshotContent is the Schema for the virtualmachinesnapshotcontents API
 type VirtualMachineSnapshotContent struct {

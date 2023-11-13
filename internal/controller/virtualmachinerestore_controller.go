@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	hitoseacomv1 "github.com/am6737/histore/api/v1"
 	"github.com/am6737/histore/pkg/config"
 	"github.com/go-logr/logr"
 	"github.com/gookit/goutil/dump"
@@ -36,9 +37,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"strings"
-	"time"
-
-	hitoseacomv1 "github.com/am6737/histore/api/v1"
 )
 
 var restoreAnnotationsToDelete = []string{
@@ -147,36 +145,36 @@ func (r *VirtualMachineRestoreReconciler) Reconcile(ctx context.Context, req ctr
 
 	fmt.Println("------------2")
 
-	updated, err := r.reconcileVolumeRestores(vmRestoreOut, target)
-	if err != nil {
-		r.Log.Error(err, "Error reconciling VolumeRestores")
-		return ctrl.Result{}, err
-	}
-	if updated {
-		r.Log.Info("reconcileVolumeRestores updated")
-		return ctrl.Result{}, nil
-		//updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Creating new PVCs"))
-		//updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for new PVCs"))
-		//return 0, ctrl.doUpdate(vmRestoreIn, vmRestoreOut)
-	}
-	fmt.Println("------------3")
-
-	ready, err := target.Ready()
-	if err != nil {
-		r.Log.Error(err, "Error checking target ready")
-		return ctrl.Result{}, err
-	}
-	if !ready {
-		r.Log.Info("Waiting for target to be ready")
-		//reason := "Waiting for target to be ready"
-		//updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionFalse, reason))
-		//updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, reason))
-		// try again in 5 secs
-		return ctrl.Result{
-			Requeue:      true,
-			RequeueAfter: 5 * time.Second,
-		}, err
-	}
+	//updated, err := r.reconcileVolumeRestores(vmRestoreOut, target)
+	//if err != nil {
+	//	r.Log.Error(err, "Error reconciling VolumeRestores")
+	//	return ctrl.Result{}, err
+	//}
+	//if updated {
+	//	r.Log.Info("reconcileVolumeRestores updated")
+	//	return ctrl.Result{}, nil
+	//	//updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Creating new PVCs"))
+	//	//updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for new PVCs"))
+	//	//return 0, ctrl.doUpdate(vmRestoreIn, vmRestoreOut)
+	//}
+	//fmt.Println("------------3")
+	//
+	//ready, err := target.Ready()
+	//if err != nil {
+	//	r.Log.Error(err, "Error checking target ready")
+	//	return ctrl.Result{}, err
+	//}
+	//if !ready {
+	//	r.Log.Info("Waiting for target to be ready")
+	//	//reason := "Waiting for target to be ready"
+	//	//updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionFalse, reason))
+	//	//updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, reason))
+	//	// try again in 5 secs
+	//	return ctrl.Result{
+	//		Requeue:      true,
+	//		RequeueAfter: 5 * time.Second,
+	//	}, err
+	//}
 
 	//updated, err = target.Reconcile()
 	//if err != nil {
@@ -236,7 +234,7 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 
 		if !found {
 			if vb.VolumeSnapshotName == nil {
-				return false, fmt.Errorf("VolumeHandle missing %+v", vb)
+				return false, fmt.Errorf("MasterVolumeHandle missing %+v", vb)
 			}
 
 			vr := hitoseacomv1.VolumeRestore{
@@ -402,7 +400,7 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacom
 	}
 
 	//volumeSnapshot := &vsv1.VolumeSnapshot{}
-	//if err := r.Client.Get(context.Background(), client.ObjectKey{Namespace: vmRestore.Namespace, Name: *volumeBackup.VolumeHandle}, volumeSnapshot); err != nil {
+	//if err := r.Client.Get(context.Background(), client.ObjectKey{Namespace: vmRestore.Namespace, Name: *volumeBackup.MasterVolumeHandle}, volumeSnapshot); err != nil {
 	//	return err
 	//}
 

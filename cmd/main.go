@@ -114,9 +114,10 @@ func main() {
 	}
 
 	if err = (&controller.VirtualMachineSnapshotReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Log:    mgr.GetLogger(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Log:      mgr.GetLogger(),
+		Recorder: mgr.GetEventRecorderFor("VirtualMachineSnapshot"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachineSnapshot")
 		os.Exit(1)
@@ -132,9 +133,12 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.VirtualMachineSnapshotContentReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Log:    mgr.GetLogger(),
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Log:          mgr.GetLogger(),
+		Recorder:     mgr.GetEventRecorderFor("VirtualMachineSnapshotContent"),
+		MasterScName: cfg.MasterStorageClass,
+		SlaveScName:  cfg.SlaveStorageClass,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachineSnapshotContent")
 		os.Exit(1)
