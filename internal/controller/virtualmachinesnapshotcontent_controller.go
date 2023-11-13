@@ -104,15 +104,13 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 	}
 
 	if content.Status == nil {
+		f := false
 		content.Status = &hitoseacomv1.VirtualMachineSnapshotContentStatus{}
 		content.Status.VolumeStatus = []hitoseacomv1.VolumeStatus{}
+		content.Status.ReadyToUse = &f
 	}
 
 	log.Log.V(1).Info("测试日志----------------------------1")
-	log.Log.V(2).Info("测试日志----------------------------2")
-	log.Log.V(3).Info("测试日志----------------------------3")
-	log.Log.V(4).Info("测试日志----------------------------4")
-	log.Log.V(5).Info("测试日志----------------------------5")
 	//var volumeSnapshotStatus []hitoseacomv1.VolumeSnapshotStatus
 
 	vmSnapshot, err := r.getVMSnapshot(content)
@@ -231,10 +229,6 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 	created, ready := true, true
 	errorMessage := ""
 	contentCpy := content.DeepCopy()
-	if contentCpy.Status == nil {
-		contentCpy.Status = &hitoseacomv1.VirtualMachineSnapshotContentStatus{}
-	}
-	contentCpy.Status.Error = nil
 
 	if len(deletedSnapshots) > 0 {
 		created, ready = false, false
@@ -717,11 +711,6 @@ func (r *VirtualMachineSnapshotContentReconciler) rbdHandler(ctx context.Context
 		//	r.Log.Error(err, "Failed to update VirtualMachineSnapshotContent status")
 		//	return err
 		//}
-		content.Status.VolumeStatus[vindex].Phase = hitoseacomv1.VolumePromote
-		if err = r.Status().Update(ctx, content); err != nil {
-			log.Log.V(0).Error(err, "s 2")
-			return err
-		}
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			//if err = rbdVol.PromoteImage(false); err != nil {
 			//	if strings.Contains(err.Error(), "Device or resource busy") {
@@ -734,6 +723,11 @@ func (r *VirtualMachineSnapshotContentReconciler) rbdHandler(ctx context.Context
 			r.Log.Info("promote slave rbd success")
 			return true, nil
 		}); err != nil {
+			return err
+		}
+		content.Status.VolumeStatus[vindex].Phase = hitoseacomv1.VolumePromote
+		if err = r.Status().Update(ctx, content); err != nil {
+			log.Log.V(1).Error(err, "s 2")
 			return err
 		}
 		return nil
@@ -973,7 +967,6 @@ func (r *VirtualMachineSnapshotContentReconciler) rbdHandler(ctx context.Context
 	//}
 
 	t := true
-	content.Status.ReadyToUse = &t
 	content.Status.VolumeStatus[vindex].Phase = hitoseacomv1.Complete
 	content.Status.VolumeStatus[vindex].ReadyToUse = &t
 	if err = r.Status().Update(ctx, content); err != nil {

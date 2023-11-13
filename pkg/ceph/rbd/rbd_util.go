@@ -1520,7 +1520,7 @@ func (ri *rbdImage) HasSnapshotFeature() bool {
 	return (uint64(ri.ImageFeatureSet) & librbd.FeatureLayering) == librbd.FeatureLayering
 }
 
-func (ri *rbdImage) createSnapshot(ctx context.Context, pOpts *rbdSnapshot) error {
+func (ri *rbdImage) CreateSnapshot(ctx context.Context, pOpts *rbdSnapshot) error {
 	fmt.Println(ctx, "rbd: snap create %s using mon %s", pOpts, pOpts.Monitors)
 	image, err := ri.open()
 	if err != nil {

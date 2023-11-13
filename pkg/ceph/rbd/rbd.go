@@ -151,7 +151,7 @@ func DoSnapshotClone(
 		return nil, err
 	}
 
-	err = cloneRbd.createSnapshot(ctx, rbdSnap)
+	err = cloneRbd.CreateSnapshot(ctx, rbdSnap)
 	if err != nil {
 		// update rbd image name for logging
 		rbdSnap.RbdImageName = cloneRbd.RbdImageName
@@ -206,7 +206,7 @@ var (
 //	snap *rbdSnapshot,
 //) error {
 //	// create snapshot
-//	err := parentVol.createSnapshot(ctx, snap)
+//	err := parentVol.CreateSnapshot(ctx, snap)
 //	if err != nil {
 //		fmt.Println(ctx, "failed to create snapshot %s: %v", snap, err)
 //

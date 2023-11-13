@@ -213,7 +213,7 @@ func CheckSnapCloneExists(
 	err = vol.checkSnapExists(rbdSnap)
 	if errors.Is(err, ErrSnapNotFound) {
 		// create snapshot
-		sErr := vol.createSnapshot(ctx, rbdSnap)
+		sErr := vol.CreateSnapshot(ctx, rbdSnap)
 		if sErr != nil {
 			//log.ErrorLog(ctx, "failed to create snapshot %s: %v", rbdSnap, sErr)
 			err = undoSnapshotCloning(ctx, parentVol, rbdSnap, vol, cr)

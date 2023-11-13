@@ -19,9 +19,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
-
 	"github.com/am6737/histore/pkg/ceph/util"
+	"github.com/am6737/histore/pkg/util/log"
 )
 
 func CreateRBDVolumeFromSnapshot(
@@ -32,7 +31,7 @@ func CreateRBDVolumeFromSnapshot(
 ) (*RbdVolume, error) {
 	// 1. 生成克隆卷的rbdVolume结构
 	cloneRbd := GenerateVolFromSnap(rbdSnap) // 传入nil表示不指定快照
-	cloneRbd.RbdImageName = strings.Replace(cloneRbd.RbdImageName, "csi-snap-", "csi-vol-", 1)
+	//cloneRbd.RbdImageName = strings.Replace(cloneRbd.RbdImageName, "csi-snap-", "csi-vol-", 1)
 	defer cloneRbd.Destroy()
 
 	// 2. 连接到Ceph集群
@@ -90,40 +89,40 @@ func createRBDClone(
 	parentVol, cloneRbdVol *RbdVolume,
 	snap *rbdSnapshot,
 ) error {
-	// create snapshot
-	//err := parentVol.createSnapshot(ctx, snap)
-	//if err != nil {
-	//	//log.ErrorLog(ctx, "failed to create snapshot %s: %v", snap, err)
-	//	return err
-	//}
+	//create snapshot
+	err := parentVol.CreateSnapshot(ctx, snap)
+	if err != nil {
+		//log.ErrorLog(ctx, "failed to create snapshot %s: %v", snap, err)
+		return err
+	}
 
 	snap.RbdImageName = parentVol.RbdImageName
 	// create clone image and delete snapshot
-	err := cloneRbdVol.cloneRbdImageFromSnapshot(ctx, snap, parentVol)
+	err = cloneRbdVol.cloneRbdImageFromSnapshot(ctx, snap, parentVol)
 	if err != nil {
-		//log.ErrorLog(
-		//	ctx,
-		//	"failed to clone rbd image %s from snapshot %s: %v",
-		//	cloneRbdVol.RbdImageName,
-		//	snap.RbdSnapName,
-		//	err)
+		log.ErrorLog(
+			ctx,
+			"failed to clone rbd image %s from snapshot %s: %v",
+			cloneRbdVol.RbdImageName,
+			snap.RbdSnapName,
+			err)
 		err = fmt.Errorf(
 			"failed to clone rbd image %s from snapshot %s: %w",
 			cloneRbdVol.RbdImageName,
 			snap.RbdSnapName,
 			err)
 	}
-	//errSnap := parentVol.deleteSnapshot(ctx, snap)
-	//if errSnap != nil {
-	//	//log.ErrorLog(ctx, "failed to delete snapshot: %v", errSnap)
-	//	fmt.Println(ctx, "failed to delete snapshot: %v", errSnap)
-	//	delErr := cloneRbdVol.deleteImage(ctx)
-	//	if delErr != nil {
-	//		//log.ErrorLog(ctx, "failed to delete rbd image: %s with error: %v", cloneRbdVol, delErr)
-	//	}
-	//
-	//	return err
-	//}
+	errSnap := parentVol.deleteSnapshot(ctx, snap)
+	if errSnap != nil {
+		//log.ErrorLog(ctx, "failed to delete snapshot: %v", errSnap)
+		fmt.Println(ctx, "failed to delete snapshot: %v", errSnap)
+		delErr := cloneRbdVol.DeleteImage(ctx)
+		if delErr != nil {
+			//log.ErrorLog(ctx, "failed to delete rbd image: %s with error: %v", cloneRbdVol, delErr)
+		}
+
+		return err
+	}
 
 	return nil
 }
