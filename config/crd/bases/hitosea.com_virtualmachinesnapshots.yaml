@@ -12,10 +12,22 @@ spec:
     kind: VirtualMachineSnapshot
     listKind: VirtualMachineSnapshotList
     plural: virtualmachinesnapshots
+    shortNames:
+    - hvms
     singular: virtualmachinesnapshot
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.readyToUse
+      name: ReadyToUse
+      type: boolean
+    - jsonPath: .status.creationTime
+      name: creationTime
+      type: string
+    name: v1
     schema:
       openAPIV3Schema:
         description: VirtualMachineSnapshot is the Schema for the virtualmachinesnapshots
@@ -73,6 +85,32 @@ spec:
             description: VirtualMachineSnapshotStatus defines the observed state of
               VirtualMachineSnapshot
             properties:
+              conditions:
+                items:
+                  description: Condition defines conditions
+                  properties:
+                    lastProbeTime:
+                      format: date-time
+                      nullable: true
+                      type: string
+                    lastTransitionTime:
+                      format: date-time
+                      nullable: true
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      description: ConditionType is the const type for Conditions
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
               creationTime:
                 format: date-time
                 nullable: true
@@ -92,6 +130,22 @@ spec:
                 type: string
               readyToUse:
                 type: boolean
+              snapshotVolumes:
+                description: SnapshotVolumesLists includes the list of volumes which
+                  were included in the snapshot and volumes which were excluded from
+                  the snapshot
+                properties:
+                  excludedVolumes:
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  includedVolumes:
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                type: object
               sourceUID:
                 description: UID is a type that holds unique ID values, including
                   UUIDs.  Because we don't ONLY use UUIDs, this is an alias to string.  Being
