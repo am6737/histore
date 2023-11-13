@@ -1139,7 +1139,6 @@ func generateVolumeFromVolumeID(
 	vi util.CSIIdentifier,
 	cr *util.Credentials,
 	secrets map[string]string,
-	snapSource bool,
 ) (*RbdVolume, error) {
 	var (
 		rbdVol *RbdVolume
@@ -1191,9 +1190,6 @@ func generateVolumeFromVolumeID(
 	}
 	rbdVol.RequestName = imageAttributes.RequestName
 	rbdVol.RbdImageName = imageAttributes.ImageName
-	if snapSource {
-		rbdVol.RbdImageName = strings.Replace(rbdVol.RbdImageName, "csi-vol-", "csi-snap-", 1)
-	}
 	rbdVol.ReservedID = vi.ObjectUUID
 	rbdVol.ImageID = imageAttributes.ImageID
 	rbdVol.Owner = imageAttributes.Owner
@@ -1251,7 +1247,7 @@ func GenVolFromVolID(
 			ErrInvalidVolID, err, volumeID)
 	}
 
-	vol, err = generateVolumeFromVolumeID(ctx, volumeID, vi, cr, secrets, false)
+	vol, err = generateVolumeFromVolumeID(ctx, volumeID, vi, cr, secrets)
 	if !errors.Is(err, util.ErrKeyNotFound) && !errors.Is(err, util.ErrPoolNotFound) &&
 		!errors.Is(err, ErrImageNotFound) {
 		return vol, err
@@ -1290,7 +1286,7 @@ func GenVolFromVolSnapID(
 			ErrInvalidVolID, err, volumeID)
 	}
 
-	vol, err = generateVolumeFromVolumeID(ctx, volumeID, vi, cr, secrets, true)
+	vol, err = generateVolumeFromVolumeID(ctx, volumeID, vi, cr, secrets)
 	if !errors.Is(err, util.ErrKeyNotFound) && !errors.Is(err, util.ErrPoolNotFound) &&
 		!errors.Is(err, ErrImageNotFound) {
 		return vol, err
@@ -1355,7 +1351,7 @@ func generateVolumeFromMapping(
 					}
 					// Add mapping poolID to Identifier
 					nvi.LocationID = pID
-					vol, err = generateVolumeFromVolumeID(ctx, volumeID, nvi, cr, secrets, true)
+					vol, err = generateVolumeFromVolumeID(ctx, volumeID, nvi, cr, secrets)
 					if !errors.Is(err, util.ErrKeyNotFound) && !errors.Is(err, util.ErrPoolNotFound) &&
 						!errors.Is(err, ErrImageNotFound) {
 						return vol, err

@@ -24,6 +24,7 @@ import (
 	"github.com/am6737/histore/pkg/ceph/util"
 	librbd "github.com/ceph/go-ceph/rbd"
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	"google.golang.org/grpc/codes"
 	corev1 "k8s.io/api/core/v1"
@@ -196,7 +197,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 				continue
 			}
 
-			volumeSnapshot, err = r.CreateVolumeSnapshot(content, &volumeBackup)
+			volumeSnapshot, err = r.CreateVolumeSnapshot(ctx, "", content, &volumeBackup)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
@@ -449,10 +450,48 @@ func (r *VirtualMachineSnapshotContentReconciler) DeleteVolumeSnapshot(ctx conte
 }
 
 func (r *VirtualMachineSnapshotContentReconciler) CreateVolumeSnapshot(
+	ctx context.Context,
+	masterVolumeHandle string,
 	content *hitoseacomv1.VirtualMachineSnapshotContent,
 	volumeBackup *hitoseacomv1.VolumeBackup,
 ) (*vsv1.VolumeSnapshot, error) {
 	log.Log.Info(fmt.Sprintf("Attempting to create VolumeSnapshot %s", *volumeBackup.VolumeSnapshotName))
+
+	msc, err := getCephCsiConfigForSC(r.Client, r.MasterScName)
+	if err != nil {
+		return nil, err
+	}
+
+	masterSecret, err := r.getSecret(msc.NodeStageSecretNamespace, msc.NodeStageSecretName)
+	if err != nil {
+		return nil, err
+	}
+
+	masterCr, err := util.NewUserCredentials(masterSecret)
+	if err != nil {
+		panic(err)
+	}
+	defer masterCr.DeleteCredentials()
+
+	mVol, err := rbd.GenVolFromVolID(ctx, masterVolumeHandle, masterCr, masterSecret)
+	defer mVol.Destroy()
+	if err != nil {
+		return nil, err
+	}
+
+	rbdSnap, err := rbd.GenSnapFromOptions(ctx, mVol, map[string]string{})
+	if err != nil {
+		panic(err)
+	}
+	rbdSnap.RbdImageName = mVol.RbdImageName
+	rbdSnap.VolSize = mVol.VolSize
+	rbdSnap.SourceVolumeID = masterVolumeHandle
+	rbdSnap.RbdSnapName = "csi-vol-" + uuid.New().String()
+
+	//sVol, err := rbd.CreateRBDVolumeFromSnapshot(ctx, mVol, rbdSnap, masterCr)
+	//if err != nil {
+	//	panic(err)
+	//}
 
 	sc := volumeBackup.PersistentVolumeClaim.Spec.StorageClassName
 	if sc == nil {
