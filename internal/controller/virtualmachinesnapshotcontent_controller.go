@@ -215,9 +215,8 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 					if err := r.Get(ctx, types.NamespacedName{Name: ownerRef.Name, Namespace: content.Namespace}, vmSnapshot); err != nil {
 						return err
 					}
-					if !*vmSnapshot.Status.ReadyToUse {
-						t := true
-						vmSnapshot.Status.ReadyToUse = &t
+					if !vmSnapshot.Status.ReadyToUse {
+						vmSnapshot.Status.ReadyToUse = true
 						if err := r.Status().Update(ctx, vmSnapshot); err != nil {
 							return err
 						}

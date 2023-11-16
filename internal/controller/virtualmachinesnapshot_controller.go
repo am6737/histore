@@ -470,18 +470,23 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		}
 	}
 
+	fmt.Println("updateSnapshotStatus 1")
+
 	if vmSnapshotDeadlineExceeded(vmSnapshotCpy) {
 		vmSnapshotCpy.Status.Phase = hitoseacomv1.Failed
 		updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionFalse, vmSnapshotDeadlineExceededError))
 		updateSnapshotCondition(vmSnapshotCpy, newFailureCondition(corev1.ConditionTrue, vmSnapshotDeadlineExceededError))
+		fmt.Println("updateSnapshotStatus 2")
 	} else if vmSnapshotProgressing(vmSnapshotCpy) {
 		vmSnapshotCpy.Status.Phase = hitoseacomv1.InProgress
 		// TODO source status update 暂时省略
 		updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionFalse, "Not ready"))
+		fmt.Println("updateSnapshotStatus 3")
 		if vmSnapshotDeleting(vmSnapshotCpy) {
 			vmSnapshotCpy.Status.Phase = hitoseacomv1.Deleting
 			updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionFalse, "VM snapshot is deleting"))
 			updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionFalse, "VM snapshot is deleting"))
+			fmt.Println("updateSnapshotStatus 4")
 		}
 	} else if vmSnapshotError(vmSnapshotCpy) != nil {
 		updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionFalse, "In error state"))
@@ -496,6 +501,7 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionUnknown, "Unknown state"))
 		updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionUnknown, "Unknown state"))
 	}
+	fmt.Println("updateSnapshotStatus 5")
 
 	//if !equality.Semantic.DeepEqual(vmSnapshot, vmSnapshotCpy) {
 	//	return r.Update(context.Background(), vmSnapshotCpy)
