@@ -22,7 +22,6 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -117,18 +116,20 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 
 	// create content if does not exist
 	if content == nil {
+		fmt.Println("createContent------------------------------------------")
 		if err = r.createContent(vmSnapshot); err != nil {
 			return ctrl.Result{}, err
 		}
+		//vmSnapshot.Status.Phase = hitoseacomv1.InProgress
 	}
 
 	if vmSnapshotTerminating(vmSnapshot) && content != nil {
+		//vmSnapshot.Status.Phase = hitoseacomv1.Deleting
 		// Delete content if that's the policy or if the snapshot
 		// is marked to be deleted and the content is not ready yet
 		// - no point of keeping an unready content
 		if shouldDeleteContent(vmSnapshot, content) {
 			r.Log.Info("Deleting vmsnapshotcontent", "namespace", content.Namespace, "name", content.Name)
-
 			if err = r.Delete(ctx, content); err != nil && !apierrors.IsNotFound(err) {
 				return ctrl.Result{}, err
 			}
@@ -366,11 +367,11 @@ func vmSnapshotFailed(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
 }
 
 func VmSnapshotReady(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
-	return vmSnapshot.Status != nil && vmSnapshot.Status.ReadyToUse != nil && *vmSnapshot.Status.ReadyToUse
+	return vmSnapshot.Status != nil && vmSnapshot.Status.ReadyToUse != false && vmSnapshot.Status.ReadyToUse
 }
 
 func vmSnapshotContentReady(vmSnapshotContent *hitoseacomv1.VirtualMachineSnapshotContent) bool {
-	return vmSnapshotContent.Status.ReadyToUse != nil && *vmSnapshotContent.Status.ReadyToUse
+	return vmSnapshotContent.Status.ReadyToUse != false && vmSnapshotContent.Status.ReadyToUse
 }
 
 func vmSnapshotError(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) *hitoseacomv1.Error {
@@ -435,11 +436,10 @@ func (r *VirtualMachineSnapshotReconciler) SetupWithManager(mgr ctrl.Manager) er
 }
 
 func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) error {
-	f := false
 	vmSnapshotCpy := vmSnapshot.DeepCopy()
 	if vmSnapshotCpy.Status == nil {
 		vmSnapshotCpy.Status = &hitoseacomv1.VirtualMachineSnapshotStatus{
-			ReadyToUse: &f,
+			ReadyToUse: false,
 		}
 	}
 
@@ -460,6 +460,9 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 
 		if content != nil {
 			// content exists and is initialized
+			if content.Status.ReadyToUse {
+				vmSnapshotCpy.Status.Phase = hitoseacomv1.Succeeded
+			}
 			vmSnapshotCpy.Status.VirtualMachineSnapshotContentName = &content.Name
 			vmSnapshotCpy.Status.CreationTime = content.Status.CreationTime
 			vmSnapshotCpy.Status.ReadyToUse = content.Status.ReadyToUse
@@ -494,11 +497,11 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionUnknown, "Unknown state"))
 	}
 
-	if !equality.Semantic.DeepEqual(vmSnapshot, vmSnapshotCpy) {
-		return r.Update(context.Background(), vmSnapshotCpy)
-	}
+	//if !equality.Semantic.DeepEqual(vmSnapshot, vmSnapshotCpy) {
+	//	return r.Update(context.Background(), vmSnapshotCpy)
+	//}
 
-	return nil
+	return r.Update(context.Background(), vmSnapshotCpy)
 }
 
 func contentDeletedIfNeeded(cpy *hitoseacomv1.VirtualMachineSnapshot, content *hitoseacomv1.VirtualMachineSnapshotContent) bool {
