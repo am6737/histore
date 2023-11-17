@@ -113,7 +113,7 @@ type VolumeStatus struct {
 
 	// +optional
 	// +nullable
-	CreationTime metav1.Time `json:"creationTime,omitempty"`
+	CreationTime *metav1.Time `json:"creationTime,omitempty"`
 
 	// +optional
 	ReadyToUse bool `json:"readyToUse,omitempty"`

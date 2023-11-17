@@ -441,7 +441,8 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 	vmSnapshotCpy := vmSnapshot.DeepCopy()
 	if vmSnapshotCpy.Status == nil {
 		vmSnapshotCpy.Status = &hitoseacomv1.VirtualMachineSnapshotStatus{
-			ReadyToUse: false,
+			ReadyToUse:   false,
+			CreationTime: currentTime(),
 		}
 	}
 
@@ -449,33 +450,33 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 	if err != nil {
 		return err
 	}
-
-	fmt.Println("VirtualMachineSnapshot content => ", content.Status)
-
 	if vmSnapshotDeleting(vmSnapshotCpy) {
 		// Enable the vmsnapshot to be deleted only in case it completed
 		// or after waiting until the content is deleted if needed
 		if !vmSnapshotProgressing(vmSnapshot) || contentDeletedIfNeeded(vmSnapshotCpy, content) {
-			RemoveFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
+			//RemoveFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
+			if err = r.removeFinalizerFromVms(vmSnapshotCpy); err != nil {
+				return err
+			}
 		}
 	} else {
 		// since no status subresource can update metadata and status
-		//if err = r.addFinalizerToVms(vmSnapshotCpy); err != nil {
-		//	return err
-		//}
-		AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
+		if err = r.addFinalizerToVms(vmSnapshotCpy); err != nil {
+			return err
+		}
+		//AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
 		if content != nil {
 			// content exists and is initialized
 			//if *content.Status.ReadyToUse {
 			//	vmSnapshotCpy.Status.Phase = hitoseacomv1.Succeeded
 			//}
 			vmSnapshotCpy.Status.VirtualMachineSnapshotContentName = &content.Name
-			vmSnapshotCpy.Status.CreationTime = content.Status.CreationTime
+			//vmSnapshotCpy.Status.CreationTime = content.Status.CreationTime
 			//vmSnapshotCpy.Status.ReadyToUse = *content.Status.ReadyToUse
 			vmSnapshotCpy.Status.Error = content.Status.Error
 		}
 	}
-
+	fmt.Println("vmSnapshotCpy.Status => ", vmSnapshotCpy.Status)
 	if vmSnapshotDeadlineExceeded(vmSnapshotCpy) {
 		vmSnapshotCpy.Status.Phase = hitoseacomv1.Failed
 		updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionFalse, vmSnapshotDeadlineExceededError))
@@ -507,7 +508,7 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 	//	return r.Update(context.Background(), vmSnapshotCpy)
 	//}
 
-	return r.Update(context.Background(), vmSnapshotCpy)
+	return r.Status().Update(context.Background(), vmSnapshotCpy)
 }
 
 func contentDeletedIfNeeded(cpy *hitoseacomv1.VirtualMachineSnapshot, content *hitoseacomv1.VirtualMachineSnapshotContent) bool {
