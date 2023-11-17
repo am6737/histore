@@ -26,7 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -138,13 +138,16 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	if err = r.updateSnapshotStatus(vmSnapshot); err != nil {
-		return reconcile.Result{}, err
+		r.Log.Error(err, "updateSnapshotStatus")
+		return ctrl.Result{
+			RequeueAfter: 15 * time.Second,
+		}, nil
 	}
 
-	_, err = r.getVM(vmSnapshot)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
+	//_, err = r.getVM(vmSnapshot)
+	//if err != nil {
+	//	return ctrl.Result{}, err
+	//}
 
 	//if err = r.Status().Update(ctx, vmSnapshot); err != nil {
 	//	logger.Error(err, "无法更新 VirtualMachineSnapshot 对象的状态")
@@ -447,45 +450,41 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		return err
 	}
 
+	fmt.Println("VirtualMachineSnapshot content => ", content)
+
 	if vmSnapshotDeleting(vmSnapshotCpy) {
 		// Enable the vmsnapshot to be deleted only in case it completed
 		// or after waiting until the content is deleted if needed
 		if !vmSnapshotProgressing(vmSnapshot) || contentDeletedIfNeeded(vmSnapshotCpy, content) {
-			//RemoveFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
+			RemoveFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
 		}
 	} else {
 		// since no status subresource can update metadata and status
-		//AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
-
+		AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
 		if content != nil {
 			// content exists and is initialized
-			if *content.Status.ReadyToUse {
-				vmSnapshotCpy.Status.Phase = hitoseacomv1.Succeeded
-			}
+			//if *content.Status.ReadyToUse {
+			//	vmSnapshotCpy.Status.Phase = hitoseacomv1.Succeeded
+			//}
 			vmSnapshotCpy.Status.VirtualMachineSnapshotContentName = &content.Name
 			vmSnapshotCpy.Status.CreationTime = content.Status.CreationTime
-			vmSnapshotCpy.Status.ReadyToUse = *content.Status.ReadyToUse
+			//vmSnapshotCpy.Status.ReadyToUse = *content.Status.ReadyToUse
 			vmSnapshotCpy.Status.Error = content.Status.Error
 		}
 	}
-
-	fmt.Println("updateSnapshotStatus 1")
 
 	if vmSnapshotDeadlineExceeded(vmSnapshotCpy) {
 		vmSnapshotCpy.Status.Phase = hitoseacomv1.Failed
 		updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionFalse, vmSnapshotDeadlineExceededError))
 		updateSnapshotCondition(vmSnapshotCpy, newFailureCondition(corev1.ConditionTrue, vmSnapshotDeadlineExceededError))
-		fmt.Println("updateSnapshotStatus 2")
 	} else if vmSnapshotProgressing(vmSnapshotCpy) {
 		vmSnapshotCpy.Status.Phase = hitoseacomv1.InProgress
 		// TODO source status update 暂时省略
 		updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionFalse, "Not ready"))
-		fmt.Println("updateSnapshotStatus 3")
 		if vmSnapshotDeleting(vmSnapshotCpy) {
 			vmSnapshotCpy.Status.Phase = hitoseacomv1.Deleting
 			updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionFalse, "VM snapshot is deleting"))
 			updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionFalse, "VM snapshot is deleting"))
-			fmt.Println("updateSnapshotStatus 4")
 		}
 	} else if vmSnapshotError(vmSnapshotCpy) != nil {
 		updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionFalse, "In error state"))
@@ -500,7 +499,6 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionUnknown, "Unknown state"))
 		updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionUnknown, "Unknown state"))
 	}
-	fmt.Println("updateSnapshotStatus 5")
 
 	//if !equality.Semantic.DeepEqual(vmSnapshot, vmSnapshotCpy) {
 	//	return r.Update(context.Background(), vmSnapshotCpy)

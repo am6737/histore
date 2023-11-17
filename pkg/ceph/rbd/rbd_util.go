@@ -680,7 +680,7 @@ func (ri *rbdImage) trashRemoveImage(ctx context.Context) error {
 
 	rbdCephMgrSupported := isCephMgrSupported(ctx, ri.ClusterID, err)
 	if rbdCephMgrSupported && err != nil {
-		fmt.Println(ctx, "failed to add task to delete rbd image: %s, %v", ri, err)
+		log.ErrorLog(ctx, "failed to add task to delete rbd image: %s, %v", ri, err)
 
 		return err
 	}
@@ -688,12 +688,12 @@ func (ri *rbdImage) trashRemoveImage(ctx context.Context) error {
 	if !rbdCephMgrSupported {
 		err = librbd.TrashRemove(ri.ioctx, ri.ImageID, true)
 		if err != nil {
-			fmt.Println(ctx, "failed to delete rbd image: %s, %v", ri, err)
+			log.ErrorLog(ctx, "failed to delete rbd image: %s, %v", ri, err)
 
 			return err
 		}
 	} else {
-		fmt.Println(ctx, "rbd: successfully added task to move image %q with id %q to trash", ri, ri.ImageID)
+		log.DebugLog(ctx, "rbd: successfully added task to move image %q with id %q to trash", ri, ri.ImageID)
 	}
 
 	return nil
@@ -730,7 +730,7 @@ func (ri *rbdImage) getCloneDepth(ctx context.Context) (uint, error) {
 			if errors.Is(err, ErrImageNotFound) {
 				return depth, nil
 			}
-			fmt.Println(ctx, "failed to check depth on image %s: %s", &vol, err)
+			log.ErrorLog(ctx, "failed to check depth on image %s: %s", &vol, err)
 
 			return depth, err
 		}
@@ -760,7 +760,7 @@ func flattenClonedRbdImages(
 	defer rv.Destroy()
 	err := rv.Connect(cr)
 	if err != nil {
-		fmt.Println(ctx, "failed to open connection %s; err %v", rv, err)
+		log.ErrorLog(ctx, "failed to open connection %s; err %v", rv, err)
 
 		return err
 	}
@@ -786,7 +786,7 @@ func flattenClonedRbdImages(
 		rv.RbdImageName = snapName.origSnapName
 		err = rv.flattenRbdImage(ctx, true, 4, 8)
 		if err != nil {
-			fmt.Println(ctx, "failed to flatten %s; err %v", rv, err)
+			log.ErrorLog(ctx, "failed to flatten %s; err %v", rv, err)
 
 			continue
 		}
@@ -830,7 +830,7 @@ func (ri *rbdImage) flattenRbdImage(
 	//	return nil
 	//}
 
-	fmt.Println(ctx, "rbd: adding task to flatten image %q", ri)
+	log.DebugLog(ctx, "rbd: adding task to flatten image %q", ri)
 
 	ta, err := ri.conn.GetTaskAdmin()
 	if err != nil {
@@ -846,24 +846,24 @@ func (ri *rbdImage) flattenRbdImage(
 			if strings.Contains(err.Error(), rbdFlattenNoParent) {
 				return nil
 			}
-			fmt.Println(ctx, "failed to add task flatten for %s : %v", ri, err)
+			log.ErrorLog(ctx, "failed to add task flatten for %s : %v", ri, err)
 
 			return err
 		}
 		if forceFlatten || depth >= hardlimit {
 			return fmt.Errorf("%w: flatten is in progress for image %s", ErrFlattenInProgress, ri.RbdImageName)
 		}
-		fmt.Println(ctx, "successfully added task to flatten image %q", ri)
+		log.DebugLog(ctx, "successfully added task to flatten image %q", ri)
 	}
 	if !rbdCephMgrSupported {
-		fmt.Println(
+		log.DebugLog(
 			ctx,
 			"task manager does not support flatten,image will be flattened once hardlimit is reached: %v",
 			err)
 		if forceFlatten || depth >= hardlimit {
 			err := ri.flatten()
 			if err != nil {
-				fmt.Println(ctx, "rbd failed to flatten image %s %s: %v", ri.Pool, ri.RbdImageName, err)
+				log.DebugLog(ctx, "rbd failed to flatten image %s %s: %v", ri.Pool, ri.RbdImageName, err)
 
 				return err
 			}
@@ -874,7 +874,7 @@ func (ri *rbdImage) flattenRbdImage(
 	if err != nil {
 		return err
 	}
-	fmt.Println("任务状态: ", formatTaskStatus(taskStatus))
+	log.DebugLog(ctx, "Task Status: ", formatTaskStatus(taskStatus))
 	is := false
 	for {
 		// 确保任务已从列表中移除
@@ -890,7 +890,7 @@ func (ri *rbdImage) flattenRbdImage(
 			}
 		}
 		if !is {
-			fmt.Println("任务完成 ", taskStatus.Refs.ImageName)
+			log.DebugLog(ctx, "Task completion", taskStatus.Refs.ImageName)
 			return nil
 		}
 		time.Sleep(time.Second)
@@ -1000,7 +1000,7 @@ func (ri *rbdImage) checkImageChainHasFeature(ctx context.Context, feature uint6
 			if errors.Is(err, ErrImageNotFound) {
 				return false, nil
 			}
-			fmt.Println(ctx, "failed to get image info for %s: %s", rbdImg.String(), err)
+			log.ErrorLog(ctx, "failed to get image info for %s: %s", rbdImg.String(), err)
 
 			return false, err
 		}
@@ -1033,7 +1033,6 @@ func genSnapFromSnapID(
 	}
 
 	rbdSnap.ClusterID = vi.ClusterID
-	fmt.Println("---------------------1100")
 
 	rbdSnap.Monitors, _, err = util.GetMonsAndClusterID(ctx, rbdSnap.ClusterID, false)
 	if err != nil {
@@ -1154,7 +1153,7 @@ func generateVolumeFromVolumeID(
 
 	rbdVol.Monitors, _, err = util.GetMonsAndClusterID(ctx, rbdVol.ClusterID, false)
 	if err != nil {
-		fmt.Println(ctx, "failed getting mons (%s)", err)
+		log.ErrorLog(ctx, "failed getting mons (%s)", err)
 
 		return rbdVol, err
 	}
@@ -1173,7 +1172,7 @@ func generateVolumeFromVolumeID(
 
 	rbdVol.Pool, err = util.GetPoolName(rbdVol.Monitors, cr, vi.LocationID)
 	if err != nil {
-		fmt.Println("util.GetPoolName err ", err)
+		log.ErrorLog(ctx, "util.GetPoolName err: %s", err)
 		return rbdVol, err
 	}
 
@@ -1328,7 +1327,7 @@ func generateVolumeFromMapping(
 				continue
 			}
 
-			fmt.Println(ctx,
+			log.DebugLog(ctx,
 				"found new clusterID mapping %s for existing clusterID %s",
 				mappedClusterID,
 				vi.ClusterID)
@@ -1341,7 +1340,7 @@ func generateVolumeFromMapping(
 					if mappedPoolID == "" {
 						continue
 					}
-					fmt.Println(ctx,
+					log.DebugLog(ctx,
 						"found new poolID mapping %s for existing pooID %s",
 						mappedPoolID,
 						poolID)
@@ -1392,7 +1391,7 @@ func GenVolFromVolumeOptions(
 	}
 	rbdVol.Monitors, rbdVol.ClusterID, err = util.GetMonsAndClusterID(ctx, clusterID, checkClusterIDMapping)
 	if err != nil {
-		fmt.Println(ctx, "failed getting mons (%s)", err)
+		log.ErrorLog(ctx, "failed getting mons (%s)", err)
 
 		return nil, err
 	}
@@ -1407,12 +1406,12 @@ func GenVolFromVolumeOptions(
 	// if no image features is provided, it results in empty string
 	// which disable all RBD image features as we expected
 	if err = rbdVol.validateImageFeatures(volOptions["imageFeatures"]); err != nil {
-		fmt.Println(ctx, "failed to validate image features %v", err)
+		log.ErrorLog(ctx, "failed to validate image features %v", err)
 
 		return nil, err
 	}
 
-	fmt.Println(
+	log.DebugLog(
 		ctx,
 		"setting disableInUseChecks: %t image features: %v mounter: %s",
 		disableInUseChecks,
@@ -1499,7 +1498,7 @@ func GenSnapFromOptions(ctx context.Context, rbdVol *RbdVolume, snapOptions map[
 	}
 	rbdSnap.Monitors, rbdSnap.ClusterID, err = util.GetMonsAndClusterID(ctx, clusterID, false)
 	if err != nil {
-		fmt.Println(ctx, "failed getting mons (%s)", err)
+		log.ErrorLog(ctx, "failed getting mons (%s)", err)
 
 		return nil, err
 	}
@@ -1517,7 +1516,7 @@ func (ri *rbdImage) HasSnapshotFeature() bool {
 }
 
 func (ri *rbdImage) CreateSnapshot(ctx context.Context, pOpts *rbdSnapshot) error {
-	fmt.Println(ctx, "rbd: snap create %s using mon %s", pOpts, pOpts.Monitors)
+	log.DebugLog(ctx, "rbd: snap create %s using mon %s", pOpts, pOpts.Monitors)
 	image, err := ri.open()
 	if err != nil {
 		return err
@@ -1530,7 +1529,7 @@ func (ri *rbdImage) CreateSnapshot(ctx context.Context, pOpts *rbdSnapshot) erro
 }
 
 func (ri *rbdImage) deleteSnapshot(ctx context.Context, pOpts *rbdSnapshot) error {
-	fmt.Println(ctx, "rbd: snap rm %s using mon %s", pOpts, pOpts.Monitors)
+	log.DebugLog(ctx, "rbd: snap rm %s using mon %s", pOpts, pOpts.Monitors)
 	image, err := ri.open()
 	if err != nil {
 		return err

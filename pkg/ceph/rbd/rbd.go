@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/am6737/histore/pkg/ceph/util"
+	"github.com/am6737/histore/pkg/util/log"
 	librbd "github.com/ceph/go-ceph/rbd"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
@@ -126,7 +127,7 @@ func DoSnapshotClone(
 
 	err = createRBDClone(ctx, parentVol, cloneRbd, rbdSnap)
 	if err != nil {
-		fmt.Println(ctx, "failed to create snapshot: %v", err)
+		log.ErrorLog(ctx, "failed to create snapshot: %v", err)
 
 		return cloneRbd, err
 	}
@@ -137,7 +138,7 @@ func DoSnapshotClone(
 				// cleanup clone and snapshot
 				errCleanUp := cleanUpSnapshot(ctx, cloneRbd, rbdSnap, cloneRbd)
 				if errCleanUp != nil {
-					fmt.Println(ctx, "failed to cleanup snapshot and clone: %v", errCleanUp)
+					log.ErrorLog(ctx, "failed to cleanup snapshot and clone: %v", errCleanUp)
 				}
 			}
 		}
@@ -145,7 +146,7 @@ func DoSnapshotClone(
 
 	err = parentVol.copyEncryptionConfig(&cloneRbd.rbdImage, false)
 	if err != nil {
-		fmt.Println(ctx, "failed to copy encryption "+
+		log.ErrorLog(ctx, "failed to copy encryption "+
 			"config for %q: %v", cloneRbd, err)
 
 		return nil, err
@@ -155,21 +156,21 @@ func DoSnapshotClone(
 	if err != nil {
 		// update rbd image name for logging
 		rbdSnap.RbdImageName = cloneRbd.RbdImageName
-		fmt.Println(ctx, "failed to create snapshot %s: %v", rbdSnap, err)
+		log.ErrorLog(ctx, "failed to create snapshot %s: %v", rbdSnap, err)
 
 		return cloneRbd, err
 	}
 
 	err = cloneRbd.getImageID()
 	if err != nil {
-		fmt.Println(ctx, "failed to get image id: %v", err)
+		log.ErrorLog(ctx, "failed to get image id: %v", err)
 
 		return cloneRbd, err
 	}
 	// save image ID
 	j, err := snapJournal.Connect(rbdSnap.Monitors, rbdSnap.RadosNamespace, cr)
 	if err != nil {
-		fmt.Println(ctx, "failed to connect to cluster: %v", err)
+		log.ErrorLog(ctx, "failed to connect to cluster: %v", err)
 
 		return cloneRbd, err
 	}
@@ -177,7 +178,7 @@ func DoSnapshotClone(
 
 	err = j.StoreImageID(ctx, rbdSnap.JournalPool, rbdSnap.ReservedID, cloneRbd.ImageID)
 	if err != nil {
-		fmt.Println(ctx, "failed to reserve volume id: %v", err)
+		log.ErrorLog(ctx, "failed to reserve volume id: %v", err)
 
 		return cloneRbd, err
 	}
