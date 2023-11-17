@@ -73,7 +73,8 @@ type SourceSpec struct {
 type VirtualMachineSnapshotContentPhase int
 
 const (
-	EnableReplication VirtualMachineSnapshotContentPhase = iota
+	WaitForCreation VirtualMachineSnapshotContentPhase = iota
+	EnableReplication
 	VolumeDemote
 	VolumePromote
 	DisableReplication
@@ -87,7 +88,7 @@ type VirtualMachineSnapshotContentStatus struct {
 	CreationTime *metav1.Time `json:"creationTime,omitempty"`
 
 	// +optional
-	ReadyToUse bool `json:"readyToUse,omitempty"`
+	ReadyToUse *bool `json:"readyToUse,omitempty"`
 
 	// +optional
 	Error *Error `json:"error,omitempty"`

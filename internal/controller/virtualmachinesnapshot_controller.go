@@ -116,7 +116,6 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 
 	// create content if does not exist
 	if content == nil {
-		fmt.Println("createContent------------------------------------------")
 		if err = r.createContent(vmSnapshot); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -147,10 +146,10 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	if err = r.Status().Update(ctx, vmSnapshot); err != nil {
-		logger.Error(err, "无法更新 VirtualMachineSnapshot 对象的状态")
-		return reconcile.Result{}, nil
-	}
+	//if err = r.Status().Update(ctx, vmSnapshot); err != nil {
+	//	logger.Error(err, "无法更新 VirtualMachineSnapshot 对象的状态")
+	//	return reconcile.Result{}, nil
+	//}
 
 	return ctrl.Result{}, nil
 }
@@ -371,7 +370,7 @@ func VmSnapshotReady(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
 }
 
 func vmSnapshotContentReady(vmSnapshotContent *hitoseacomv1.VirtualMachineSnapshotContent) bool {
-	return vmSnapshotContent.Status.ReadyToUse != false && vmSnapshotContent.Status.ReadyToUse
+	return vmSnapshotContent.Status.ReadyToUse != nil && *vmSnapshotContent.Status.ReadyToUse
 }
 
 func vmSnapshotError(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) *hitoseacomv1.Error {
@@ -460,12 +459,12 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 
 		if content != nil {
 			// content exists and is initialized
-			if content.Status.ReadyToUse {
+			if *content.Status.ReadyToUse {
 				vmSnapshotCpy.Status.Phase = hitoseacomv1.Succeeded
 			}
 			vmSnapshotCpy.Status.VirtualMachineSnapshotContentName = &content.Name
 			vmSnapshotCpy.Status.CreationTime = content.Status.CreationTime
-			vmSnapshotCpy.Status.ReadyToUse = content.Status.ReadyToUse
+			vmSnapshotCpy.Status.ReadyToUse = *content.Status.ReadyToUse
 			vmSnapshotCpy.Status.Error = content.Status.Error
 		}
 	}
@@ -507,7 +506,7 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 	//	return r.Update(context.Background(), vmSnapshotCpy)
 	//}
 
-	return r.Update(context.Background(), vmSnapshotCpy)
+	return r.Status().Update(context.Background(), vmSnapshotCpy)
 }
 
 func contentDeletedIfNeeded(cpy *hitoseacomv1.VirtualMachineSnapshot, content *hitoseacomv1.VirtualMachineSnapshotContent) bool {
