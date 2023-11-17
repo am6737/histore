@@ -422,7 +422,7 @@ func (rs *rbdSnapshot) String() string {
 func createImage(ctx context.Context, pOpts *RbdVolume, cr *util.Credentials) error {
 	volSzMiB := fmt.Sprintf("%dM", util.RoundOffVolSize(pOpts.VolSize))
 
-	fmt.Println(ctx, "rbd: create %s size %s (features: %s) using mon %s",
+	log.DebugLog(ctx, "rbd: create %s size %s (features: %s) using mon %s",
 		pOpts, volSzMiB, pOpts.ImageFeatureSet.Names(), pOpts.Monitors)
 
 	options := librbd.NewRbdImageOptions()
@@ -587,7 +587,7 @@ func isCephMgrSupported(ctx context.Context, clusterID string, err error) bool {
 	case err == nil:
 		return true
 	case strings.Contains(err.Error(), rbdTaskRemoveCmdInvalidString):
-		fmt.Println(
+		log.ErrorLog(
 			ctx,
 			"cluster with cluster ID (%s) does not support Ceph manager based rbd commands"+
 				"(minimum ceph version required is v14.2.3)",
@@ -595,7 +595,7 @@ func isCephMgrSupported(ctx context.Context, clusterID string, err error) bool {
 
 		return false
 	case strings.Contains(err.Error(), rbdTaskRemoveCmdAccessDeniedMessage):
-		fmt.Println(ctx, "access denied to Ceph MGR-based rbd commands on cluster ID (%s)", clusterID)
+		log.ErrorLog(ctx, "access denied to Ceph MGR-based rbd commands on cluster ID (%s)", clusterID)
 
 		return false
 	}
@@ -608,7 +608,7 @@ func isCephMgrSupported(ctx context.Context, clusterID string, err error) bool {
 func (ri *rbdImage) ensureImageCleanup(ctx context.Context) error {
 	trashInfoList, err := librbd.GetTrashList(ri.ioctx)
 	if err != nil {
-		fmt.Println(ctx, "failed to list images in trash: %v", err)
+		log.ErrorLog(ctx, "failed to list images in trash: %v", err)
 
 		return err
 	}
@@ -636,16 +636,16 @@ func (ri *rbdImage) DeleteImage(ctx context.Context) error {
 	}
 
 	if ri.isBlockEncrypted() {
-		fmt.Println(ctx, "rbd: going to remove DEK for %q (block encryption)", ri)
+		log.DebugLog(ctx, "rbd: going to remove DEK for %q (block encryption)", ri)
 		if err = ri.blockEncryption.RemoveDEK(ri.VolID); err != nil {
-			fmt.Println(ctx, "failed to clean the passphrase for volume %s (block encryption): %s", ri.VolID, err)
+			log.ErrorLog(ctx, "failed to clean the passphrase for volume %s (block encryption): %s", ri.VolID, err)
 		}
 	}
 
 	if ri.isFileEncrypted() {
-		fmt.Println(ctx, "rbd: going to remove DEK for %q (file encryption)", ri)
+		log.DebugLog(ctx, "rbd: going to remove DEK for %q (file encryption)", ri)
 		if err = ri.fileEncryption.RemoveDEK(ri.VolID); err != nil {
-			fmt.Println(ctx, "failed to clean the passphrase for volume %s (file encryption): %s", ri.VolID, err)
+			log.ErrorLog(ctx, "failed to clean the passphrase for volume %s (file encryption): %s", ri.VolID, err)
 		}
 	}
 
@@ -657,7 +657,7 @@ func (ri *rbdImage) DeleteImage(ctx context.Context) error {
 	rbdImage := librbd.GetImage(ri.ioctx, image)
 	err = rbdImage.Trash(0)
 	if err != nil {
-		fmt.Println(ctx, "failed to delete rbd image: %s, error: %v", ri, err)
+		log.ErrorLog(ctx, "failed to delete rbd image: %s, error: %v", ri, err)
 
 		return err
 	}
@@ -669,7 +669,7 @@ func (ri *rbdImage) DeleteImage(ctx context.Context) error {
 // otherwise removes the image from trash.
 func (ri *rbdImage) trashRemoveImage(ctx context.Context) error {
 	// attempt to use Ceph manager based deletion support if available
-	fmt.Println(ctx, "rbd: adding task to remove image %q with id %q from trash", ri, ri.ImageID)
+	log.DebugLog(ctx, "rbd: adding task to remove image %q with id %q from trash", ri, ri.ImageID)
 
 	ta, err := ri.conn.GetTaskAdmin()
 	if err != nil {
@@ -1165,14 +1165,12 @@ func generateVolumeFromVolumeID(
 
 	j, err := volJournal.Connect(rbdVol.Monitors, rbdVol.RadosNamespace, cr)
 	if err != nil {
-		fmt.Println("volJournal.Connect err ", err)
 		return rbdVol, err
 	}
 	defer j.Destroy()
 
 	rbdVol.Pool, err = util.GetPoolName(rbdVol.Monitors, cr, vi.LocationID)
 	if err != nil {
-		log.ErrorLog(ctx, "util.GetPoolName err: %s", err)
 		return rbdVol, err
 	}
 
@@ -1554,7 +1552,7 @@ func (rv *RbdVolume) cloneRbdImageFromSnapshot(
 	parentVol *RbdVolume,
 ) error {
 	var err error
-	fmt.Println(ctx, fmt.Sprintf("rbd: clone %s %s (features: %s) using mon %s",
+	log.DebugLog(ctx, fmt.Sprintf("rbd: clone %s %s (features: %s) using mon %s",
 		pSnapOpts, rv, rv.ImageFeatureSet.Names(), rv.Monitors))
 
 	err = parentVol.openIoctx()
@@ -1600,7 +1598,7 @@ func (rv *RbdVolume) cloneRbdImageFromSnapshot(
 		if deleteClone {
 			err = librbd.RemoveImage(rv.ioctx, rv.RbdImageName)
 			if err != nil {
-				fmt.Println(ctx, "failed to delete temporary image %q: %v", rv, err)
+				log.ErrorLog(ctx, "failed to delete temporary image %q: %v", rv, err)
 			}
 		}
 	}()
@@ -1658,7 +1656,7 @@ func (rv *RbdVolume) setImageOptions(ctx context.Context, options *librbd.ImageO
 		}
 	}
 
-	fmt.Println(ctx, logMsg)
+	log.DebugLog(ctx, logMsg)
 
 	return nil
 }

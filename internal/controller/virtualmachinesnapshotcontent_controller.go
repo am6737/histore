@@ -106,18 +106,13 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 
 	//log.Log.V(1).Info("测试日志----------------------------1")
 
-	// check if the object is being deleted
-	if content.GetDeletionTimestamp().IsZero() {
-		//fmt.Println("VirtualMachineSnapshotContent delete")
-	}
-
 	if vmSnapshotContentDeleting(content) {
-		//logger.Info("Content deleting %s/%s", "namespace", content.Namespace, "name", content.Name)
-		//if err := r.removeFinalizerFromVmsc(content); err != nil {
-		//	logger.Error(err, "Failed to remove VirtualMachineSnapshotContent finalizer")
-		//	return reconcile.Result{}, err
-		//}
-		return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
+		//logger.Info("Content deleting", "namespace", content.Namespace, "name", content.Name)
+		if err := r.removeFinalizerFromVmsc(content); err != nil {
+			logger.Error(err, "Failed to remove VirtualMachineSnapshotContent finalizer")
+			return reconcile.Result{RequeueAfter: 15 * time.Second}, err
+		}
+		return reconcile.Result{}, nil
 	} else {
 		if err := r.addFinalizerToVmsc(content); err != nil {
 			logger.Error(err, "Failed to add VirtualMachineSnapshotContent finalizer")
@@ -333,10 +328,6 @@ func (r *VirtualMachineSnapshotContentReconciler) deleteVolumeHandler(e event.De
 			r.Log.Error(err, "Failed to add PersistentVolumeClaim finalizer")
 			continue
 		}
-		if err = r.removeFinalizerFromVmsc(content); err != nil {
-			r.Log.Error(err, "Failed to remove VirtualMachineSnapshotContent finalizer")
-			continue
-		}
 	}
 
 	return true
@@ -536,7 +527,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 				r.Log.Error(err, "demote master rbd failed")
 				return false, err
 			}
-			r.Log.Info("enable master rbd success", "volumeHandle", rbdVol.RbdImageName)
+			r.Log.Info("enable master rbd success", "volumeHandle", fmt.Sprintf("%s-%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			if err == wait.ErrWaitTimeout {
@@ -564,7 +555,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 			r.Log.Info(fmt.Sprintf("master rbd state => %v", state))
 			return nil
 		}
-		r.Log.Info("wait demote master rbd", "volumeHandle", rbdVol.RbdImageName)
+		r.Log.Info("wait demote master rbd", "volumeHandle", fmt.Sprintf("%s-%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.DemoteImage(); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
@@ -610,7 +601,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 				r.Log.Error(err, "promote slave rbd failed")
 				return false, err
 			}
-			r.Log.Info("promote slave rbd success")
+			r.Log.Info("promote slave rbd success", "volumeHandle", fmt.Sprintf("%s-%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			return err
@@ -634,7 +625,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 				}
 				r.Log.Error(err, "disable slave rbd image failed")
 			}
-			r.Log.Info("disable slave rbd image success")
+			r.Log.Info("disable slave rbd image success", "volumeHandle", fmt.Sprintf("%s-%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			return err

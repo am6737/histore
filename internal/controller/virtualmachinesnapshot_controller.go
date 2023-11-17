@@ -450,7 +450,7 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		return err
 	}
 
-	fmt.Println("VirtualMachineSnapshot content => ", content)
+	fmt.Println("VirtualMachineSnapshot content => ", content.Status)
 
 	if vmSnapshotDeleting(vmSnapshotCpy) {
 		// Enable the vmsnapshot to be deleted only in case it completed
@@ -460,6 +460,9 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		}
 	} else {
 		// since no status subresource can update metadata and status
+		//if err = r.addFinalizerToVms(vmSnapshotCpy); err != nil {
+		//	return err
+		//}
 		AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
 		if content != nil {
 			// content exists and is initialized
@@ -504,7 +507,7 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 	//	return r.Update(context.Background(), vmSnapshotCpy)
 	//}
 
-	return r.Status().Update(context.Background(), vmSnapshotCpy)
+	return r.Update(context.Background(), vmSnapshotCpy)
 }
 
 func contentDeletedIfNeeded(cpy *hitoseacomv1.VirtualMachineSnapshot, content *hitoseacomv1.VirtualMachineSnapshotContent) bool {
