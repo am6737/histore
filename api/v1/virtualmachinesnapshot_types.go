@@ -75,7 +75,7 @@ type VirtualMachineSnapshotStatus struct {
 	Phase VirtualMachineSnapshotPhase `json:"phase,omitempty"`
 
 	// +optional
-	ReadyToUse bool `json:"readyToUse,omitempty"`
+	ReadyToUse *bool `json:"readyToUse,omitempty"`
 
 	// +optional
 	Error *Error `json:"error,omitempty"`

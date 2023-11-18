@@ -128,5 +128,5 @@ func (s *VirtualMachineSnapshot) GetSnapshotStatus(ctx context.Context, snapshot
 	//size := Snap.Status.RestoreSize
 	readyToUse := snap.Status.ReadyToUse
 
-	return readyToUse, creationTime, 0, nil
+	return *readyToUse, creationTime, 0, nil
 }

@@ -379,7 +379,7 @@ func vmSnapshotFailed(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
 }
 
 func VmSnapshotReady(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
-	return vmSnapshot.Status != nil && vmSnapshot.Status.ReadyToUse != false && vmSnapshot.Status.ReadyToUse
+	return vmSnapshot.Status != nil && vmSnapshot.Status.ReadyToUse != nil && *vmSnapshot.Status.ReadyToUse
 }
 
 func vmSnapshotContentReady(vmSnapshotContent *hitoseacomv1.VirtualMachineSnapshotContent) bool {
@@ -449,9 +449,10 @@ func (r *VirtualMachineSnapshotReconciler) SetupWithManager(mgr ctrl.Manager) er
 
 func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) error {
 	vmSnapshotCpy := vmSnapshot.DeepCopy()
+	f := false
 	if vmSnapshotCpy.Status == nil {
 		vmSnapshotCpy.Status = &hitoseacomv1.VirtualMachineSnapshotStatus{
-			ReadyToUse:   false,
+			ReadyToUse:   &f,
 			CreationTime: currentTime(),
 		}
 	}

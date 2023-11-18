@@ -131,14 +131,12 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		}
 	}
 
-	//currentlyCreated := vmSnapshotContentCreated(content)
-	currentlyError := content.Status.Error != nil
-
 	if content.Status == nil {
 		f := false
 		content.Status = &hitoseacomv1.VirtualMachineSnapshotContentStatus{
 			ReadyToUse:   &f,
 			CreationTime: currentTime(),
+			Error:        translateError(&hitoseacomv1.Error{}),
 		}
 		for _, v := range content.Spec.VolumeBackups {
 			content.Status.VolumeStatus = append(content.Status.VolumeStatus, hitoseacomv1.VolumeStatus{
@@ -153,6 +151,9 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 			}, nil
 		}
 	}
+
+	//currentlyCreated := vmSnapshotContentCreated(content)
+	currentlyError := content.Status.Error != nil
 
 	//if content.Status.ReadyToUse {
 	//	r.Log.Info("VirtualMachineSnapshotContent已完成", "namespace", content.Namespace, "name", content.Name)
