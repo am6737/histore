@@ -87,39 +87,32 @@ func (r *ScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, errors.Wrapf(err, "error getting schedule %s", req.String())
 	}
 
-	fmt.Println("ScheduleReconciler 1")
-
 	// 更新状态
 	if err := r.updateScheduleStatus(schedule); err != nil {
 		return ctrl.Result{}, err
 	}
-	fmt.Println("ScheduleReconciler 2")
 
 	if schedule.Status.Phase != hitoseacomv1.SchedulePhaseEnabled {
 		r.Log.Info(fmt.Sprintf("the schedule's phase is %s, isn't %s, skip\n", schedule.Status.Phase, hitoseacomv1.SchedulePhaseEnabled))
 		return ctrl.Result{}, nil
 	}
-	fmt.Println("ScheduleReconciler 3")
 
 	var err error
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		fmt.Println("backupSnapshots")
 		if err = r.backupSnapshots(ctx, schedule); err != nil {
 			r.Log.Error(err, "Error while creating snapshots")
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		fmt.Println("deleteExpiredSnapshots")
 		if err = r.deleteExpiredSnapshots(ctx, schedule); err != nil {
 			r.Log.Error(err, "Error while deleting snapshots")
 		}
 	}()
 	wg.Wait()
-	fmt.Println("ScheduleReconciler 4")
 
 	return ctrl.Result{}, nil
 }
@@ -235,7 +228,7 @@ func (r *ScheduleReconciler) backupSnapshots(ctx context.Context, schedule *hito
 		oldt := schedule.Status.LastBackup
 		for _, vm := range vmList.Items {
 			r.Log.Info("创建快照", "Name", "Snap-"+vm.Name)
-			if err := r.Snap.CreateSnapshot(ctx, "schedule-snapshot-"+strconv.FormatInt(time.Now().UnixNano(), 10), vm.Namespace, "", vm.Name); err != nil {
+			if err := r.Snap.CreateSnapshot(ctx, "schedule-snapshot-"+strconv.FormatInt(time.Now().Unix(), 10)+"-"+vm.Name, vm.Namespace, "", vm.Name); err != nil {
 				r.Log.Error(err, "CreateSnapshot")
 				continue
 			}

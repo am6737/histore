@@ -174,6 +174,8 @@ type PersistentVolumeClaim struct {
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:shortName=hvms
+//+kubebuilder:printcolumn:name="SourceKind",type="string",JSONPath=".spec.source.kind"
+//+kubebuilder:printcolumn:name="SourceName",type="string",JSONPath=".spec.source.name"
 //+kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 //+kubebuilder:printcolumn:name="ReadyToUse",type="boolean",JSONPath=".status.readyToUse"
 //+kubebuilder:printcolumn:name="creationTime",type="string",JSONPath=".status.creationTime"
