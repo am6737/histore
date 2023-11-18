@@ -18,12 +18,14 @@ package main
 
 import (
 	"flag"
-	"github.com/am6737/histore/pkg/config"
-	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
-	kubevirtv1 "kubevirt.io/api/core/v1"
-	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+	clocks "k8s.io/utils/clock"
 	"os"
 	"time"
+
+	kubevirtv1 "kubevirt.io/api/core/v1"
+	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+
+	"github.com/am6737/histore/pkg/config"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -58,8 +60,6 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(kubevirtv1.AddToScheme(scheme))
-
-	utilruntime.Must(snapshotv1.AddToScheme(scheme))
 
 	utilruntime.Must(cdiv1.AddToScheme(scheme))
 
@@ -141,6 +141,16 @@ func main() {
 		SlaveScName:  cfg.SlaveStorageClass,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachineSnapshotContent")
+		os.Exit(1)
+	}
+	if err = (&controller.ScheduleReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Log:    mgr.GetLogger(),
+		Clock:  clocks.RealClock{},
+		Snap:   controller.NewVirtualMachineSnapshot(mgr.GetClient(), mgr.GetScheme()),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Schedule")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder

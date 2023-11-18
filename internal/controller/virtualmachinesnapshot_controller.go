@@ -461,9 +461,11 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		}
 	} else {
 		// since no status subresource can update metadata and status
-		if err = r.addFinalizerToVms(vmSnapshotCpy); err != nil {
-			return err
-		}
+		defer func(r *VirtualMachineSnapshotReconciler, vms *hitoseacomv1.VirtualMachineSnapshot) {
+			if err := r.addFinalizerToVms(vms); err != nil {
+				r.Log.Error(err, "addFinalizerToVms")
+			}
+		}(r, vmSnapshotCpy)
 		//AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
 		if content != nil {
 			// content exists and is initialized
@@ -476,7 +478,6 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 			vmSnapshotCpy.Status.Error = content.Status.Error
 		}
 	}
-	fmt.Println("vmSnapshotCpy.Status => ", vmSnapshotCpy.Status)
 	if vmSnapshotDeadlineExceeded(vmSnapshotCpy) {
 		vmSnapshotCpy.Status.Phase = hitoseacomv1.Failed
 		updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionFalse, vmSnapshotDeadlineExceededError))

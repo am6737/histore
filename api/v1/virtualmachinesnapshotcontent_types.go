@@ -124,8 +124,10 @@ type VolumeStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:resource:shortName=hvmsc
 //+kubebuilder:printcolumn:name="ReadyToUse",type="boolean",JSONPath=".status.readyToUse"
 //+kubebuilder:printcolumn:name="creationTime",type="string",JSONPath=".status.creationTime"
+//+kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 
 // VirtualMachineSnapshotContent is the Schema for the virtualmachinesnapshotcontents API
 type VirtualMachineSnapshotContent struct {

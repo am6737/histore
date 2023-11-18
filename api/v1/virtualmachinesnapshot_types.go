@@ -177,6 +177,7 @@ type PersistentVolumeClaim struct {
 //+kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 //+kubebuilder:printcolumn:name="ReadyToUse",type="boolean",JSONPath=".status.readyToUse"
 //+kubebuilder:printcolumn:name="creationTime",type="string",JSONPath=".status.creationTime"
+//+kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 
 // VirtualMachineSnapshot is the Schema for the virtualmachinesnapshots API
 type VirtualMachineSnapshot struct {

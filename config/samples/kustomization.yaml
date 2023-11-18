@@ -3,4 +3,5 @@ resources:
 - _v1_virtualmachinesnapshot.yaml
 - _v1_virtualmachinerestore.yaml
 - _v1_virtualmachinesnapshotcontent.yaml
+- _v1_schedule.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples

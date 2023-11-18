@@ -25,7 +25,6 @@ import (
 	librbd "github.com/ceph/go-ceph/rbd"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
-	"github.com/gookit/goutil/dump"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	"google.golang.org/grpc/codes"
 	corev1 "k8s.io/api/core/v1"
@@ -120,7 +119,6 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 			r.Log.Error(err, "handleDeletion")
 			return reconcile.Result{RequeueAfter: 15 * time.Second}, err
 		}
-		logger.Info("Content deleting", "namespace", content.Namespace, "name", content.Name)
 		if err := r.removeFinalizerFromVmsc(content); err != nil {
 			logger.Error(err, "Failed to remove VirtualMachineSnapshotContent finalizer")
 			return reconcile.Result{RequeueAfter: 15 * time.Second}, err
@@ -325,7 +323,7 @@ func (r *VirtualMachineSnapshotContentReconciler) deleteVolumeHandler(e event.De
 		r.Log.Error(err, "get VirtualMachineSnapshotContent")
 		return false
 	}
-	dump.Println("deleteVolumeHandler vmSnapshot => ", vmSnapshot.Status)
+	//dump.Println("deleteVolumeHandler vmSnapshot => ", vmSnapshot.Status)
 	SecretName := content.Annotations[prefixedSnapshotDeleteSecretNameKey]
 	SecretNamespace := content.Annotations[prefixedSnapshotDeleteSecretNamespaceKey]
 	// check if the object is being deleted
@@ -558,13 +556,10 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 			}
 			return err
 		}
-		if err = r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
+		return r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
 			VolumeName: volumeBackup.VolumeName,
 			Phase:      hitoseacomv1.VolumeDemote,
-		}); err != nil {
-			return err
-		}
-		return nil
+		})
 	}
 
 	DemoteImageHandler := func(rbdVol *rbd.RbdVolume) error {
@@ -574,7 +569,10 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 		}
 		if !state.Primary {
 			r.Log.Info(fmt.Sprintf("master rbd state => %v", state))
-			return nil
+			return r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
+				VolumeName: volumeBackup.VolumeName,
+				Phase:      hitoseacomv1.VolumePromote,
+			})
 		}
 		r.Log.Info("wait demote master rbd", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
@@ -585,7 +583,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 				r.Log.Error(err, "demote master rbd failed")
 				return false, err
 			}
-			r.Log.Info("demote master rbd success")
+			r.Log.Info("demote master rbd success", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			if err == wait.ErrWaitTimeout {
@@ -595,13 +593,10 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 			}
 			return err
 		}
-		if err = r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
+		return r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
 			VolumeName: volumeBackup.VolumeName,
 			Phase:      hitoseacomv1.VolumePromote,
-		}); err != nil {
-			return err
-		}
-		return nil
+		})
 	}
 
 	PromoteImageHandler := func(rbdVol *rbd.RbdVolume) error {
@@ -611,9 +606,12 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 		}
 		if state.Primary {
 			r.Log.Info(fmt.Sprintf("slave rbd state => %v", state))
-			return nil
+			return r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
+				VolumeName: volumeBackup.VolumeName,
+				Phase:      hitoseacomv1.VolumePromote,
+			})
 		}
-		r.Log.Info("wait promote slave rbd", "volumeHandle", rbdVol.RbdImageName)
+		r.Log.Info("wait promote slave rbd", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.PromoteImage(false); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
@@ -627,13 +625,10 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 		}); err != nil {
 			return err
 		}
-		if err = r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
+		return r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
 			VolumeName: volumeBackup.VolumeName,
-			Phase:      hitoseacomv1.DisableReplication,
-		}); err != nil {
-			return err
-		}
-		return nil
+			Phase:      hitoseacomv1.VolumePromote,
+		})
 	}
 
 	DisableImageHandler := func(rbdVol *rbd.RbdVolume) error {
@@ -768,25 +763,16 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 		if err = EnabledImageHandler(cloneRbd); err != nil {
 			return false, err
 		}
-	//case hitoseacomv1.VolumeDemote:
-	//	if err = DemoteImageHandler(cloneRbd); err != nil {
-	//		return false, err
-	//	}
-	//case hitoseacomv1.VolumePromote:
-	//	if err = PromoteImageHandler(slaveRbd); err != nil {
-	//		return false, err
-	//	}
 	case hitoseacomv1.DisableReplication:
 		if err = DisableImageHandler(slaveRbd); err != nil {
 			return false, err
 		}
 	case hitoseacomv1.Complete:
+		slaveVolumeHandle = content.Status.VolumeStatus[vindex].SlaveVolumeHandle
 		if err = r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
-			VolumeName:         volumeBackup.VolumeName,
-			Phase:              hitoseacomv1.Complete,
-			MasterVolumeHandle: masterVolumeHandle,
-			SlaveVolumeHandle:  slaveVolumeHandle,
-			ReadyToUse:         true,
+			VolumeName: volumeBackup.VolumeName,
+			Phase:      hitoseacomv1.Complete,
+			ReadyToUse: true,
 		}); err != nil {
 			//if apierrors.IsConflict(err) {
 			//	log.Log.V(0).Info("Retrying with patch due to conflict error")
@@ -827,7 +813,7 @@ func (r *VirtualMachineSnapshotContentReconciler) waitForMasterImageSync(masterR
 
 		for _, mrs := range masterRbdImageStatus.SiteStatuses {
 			if mrs.MirrorUUID == "" {
-				dump.P("master rbd image status", mrs)
+				//dump.P("master rbd image status", mrs)
 				rs1, err := mrs.DescriptionReplayStatus()
 				if err != nil {
 					if strings.Contains(err.Error(), "No such file or directory") {
@@ -894,7 +880,7 @@ func (r *VirtualMachineSnapshotContentReconciler) waitForSlaveImageSync(status h
 			r.Log.Error(err, "GetImageMirroringStatus err")
 			return false, nil
 		}
-		dump.Println("sRbdStatus => ", sRbdStatus)
+		//dump.Println("sRbdStatus => ", sRbdStatus)
 		for _, srs := range sRbdStatus.SiteStatuses {
 			if srs.MirrorUUID == "" {
 				if strings.Contains(srs.Description, "remote image is not primary") || strings.Contains(srs.Description, "local image is primary") {
@@ -913,7 +899,7 @@ func (r *VirtualMachineSnapshotContentReconciler) waitForSlaveImageSync(status h
 					r.Log.Error(err, "replayStatus err")
 					return false, nil
 				}
-				dump.Println("replayStatus => ", replayStatus)
+				//dump.Println("replayStatus => ", replayStatus)
 				if replayStatus.ReplayState == "idle" {
 					if err := slaveRbdHandle(); err != nil {
 						r.Log.Error(err, "slaveRbdHandle")
@@ -991,7 +977,7 @@ func (r *VirtualMachineSnapshotContentReconciler) getCommonParameters(content *h
 
 	parame := map[string]string{
 		"clusterID": class.Parameters["clusterID"],
-		//"csi.storage.k8s.io/volumesnapshot/name":        "snap-pvc-1440-1",
+		//"csi.storage.k8s.io/volumesnapshot/name":        "Snap-pvc-1440-1",
 		//"csi.storage.k8s.io/volumesnapshot/namespace":   "default",
 		//"csi.storage.k8s.io/volumesnapshotcontent/name": "snapcontent-060d2c31-4cd1-4e2f-b0cf-78749f3ef3fa",
 		"pool": class.Parameters["pool"],

@@ -5,6 +5,7 @@ resources:
 - bases/hitosea.com_virtualmachinesnapshots.yaml
 - bases/hitosea.com_virtualmachinerestores.yaml
 - bases/hitosea.com_virtualmachinesnapshotcontents.yaml
+- bases/hitosea.com_schedules.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:
@@ -13,6 +14,7 @@ patchesStrategicMerge:
 #- patches/webhook_in_virtualmachinesnapshots.yaml
 #- patches/webhook_in_virtualmachinerestores.yaml
 #- patches/webhook_in_virtualmachinesnapshotcontents.yaml
+#- patches/webhook_in_schedules.yaml
 #+kubebuilder:scaffold:crdkustomizewebhookpatch
 
 # [CERTMANAGER] To enable cert-manager, uncomment all the sections with [CERTMANAGER] prefix.
@@ -20,6 +22,7 @@ patchesStrategicMerge:
 #- patches/cainjection_in_virtualmachinesnapshots.yaml
 #- patches/cainjection_in_virtualmachinerestores.yaml
 #- patches/cainjection_in_virtualmachinesnapshotcontents.yaml
+#- patches/cainjection_in_schedules.yaml
 #+kubebuilder:scaffold:crdkustomizecainjectionpatch
 
 # the following config is for teaching kustomize how to do kustomization for CRDs.

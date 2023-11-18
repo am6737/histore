@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"github.com/am6737/histore/pkg/ceph/journal"
 	"github.com/am6737/histore/pkg/ceph/util"
+	"github.com/am6737/histore/pkg/util/log"
 )
 
 var (
@@ -129,7 +130,7 @@ func ReserveVol(ctx context.Context, rbdVol *RbdVolume, rbdSnap *rbdSnapshot, cr
 		return err
 	}
 
-	fmt.Println(ctx, "generated Volume ID (%s) and image name (%s) for request name (%s)",
+	log.DebugLog(ctx, "generated Volume ID (%s) and image name (%s) for request name (%s)",
 		rbdVol.VolID, rbdVol.RbdImageName, rbdVol.RequestName)
 
 	return nil
@@ -242,10 +243,7 @@ func CheckSnapCloneExists(
 		}
 	}
 
-	//log.DebugLog(ctx, "found existing image (%s) with name (%s) for request (%s)",
-	//	rbdSnap.VolID, rbdSnap.RbdSnapName, rbdSnap.RequestName)
-
-	fmt.Println(ctx, "found existing image (%s) with name (%s) for request (%s)",
+	log.DebugLog(ctx, "found existing image (%s) with name (%s) for request (%s)",
 		rbdSnap.VolID, rbdSnap.RbdSnapName, rbdSnap.RequestName)
 
 	return true, nil
@@ -270,15 +268,13 @@ func undoSnapReservation(ctx context.Context, rbdSnap *rbdSnapshot, cr *util.Cre
 func (rv *RbdVolume) storeImageID(ctx context.Context, j *journal.Connection) error {
 	err := rv.getImageID()
 	if err != nil {
-		//log.ErrorLog(ctx, "failed to get image id %s: %v", rv, err)
-		fmt.Println(ctx, "failed to get image id %s: %v", rv, err)
+		log.ErrorLog(ctx, "failed to get image id %s: %v", rv, err)
 
 		return err
 	}
 	err = j.StoreImageID(ctx, rv.JournalPool, rv.ReservedID, rv.ImageID)
 	if err != nil {
-		//log.ErrorLog(ctx, "failed to store volume id %s: %v", rv, err)
-		fmt.Println(ctx, "failed to store volume id %s: %v", rv, err)
+		log.ErrorLog(ctx, "failed to store volume id %s: %v", rv, err)
 
 		return err
 	}
