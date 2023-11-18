@@ -264,7 +264,7 @@ func (r *ScheduleReconciler) deleteExpiredSnapshots(ctx context.Context, schedul
 		// 先过滤掉特定标签的快照
 		var filteredVMSSList []hitoseacomv1.VirtualMachineSnapshot
 		for _, vmss := range vmsList.Items {
-			if _, ok := vmss.ObjectMeta.Labels[ScheduleSnapshotLabelKey]; ok {
+			if _, ok := vmss.ObjectMeta.Labels[ScheduleSnapshotLabelKey]; ok && vmss.Status.Phase != hitoseacomv1.InProgress {
 				filteredVMSSList = append(filteredVMSSList, vmss)
 			}
 		}

@@ -477,10 +477,11 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 		TTL                = 3 * time.Minute
 	)
 
-	contentCpy := &hitoseacomv1.VirtualMachineSnapshotContent{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: content.Namespace, Name: content.Name}, contentCpy); err != nil {
-		return false, err
-	}
+	//contentCpy := &hitoseacomv1.VirtualMachineSnapshotContent{}
+	//if err := r.Get(ctx, client.ObjectKey{Namespace: content.Namespace, Name: content.Name}, contentCpy); err != nil {
+	//	return false, err
+	//}
+	contentCpy := content.DeepCopy()
 	vindex := 0
 	is := false
 	for k, v := range contentCpy.Status.VolumeStatus {
