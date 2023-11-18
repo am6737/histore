@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -93,6 +94,14 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		}
 		logger.Error(err, "无法获取 VirtualMachineSnapshot 对象")
 		return ctrl.Result{}, err
+	}
+
+	if vmSnapshotDeleting(vmSnapshot) {
+		if err := r.removeFinalizerFromVms(vmSnapshot); err != nil {
+			logger.Error(err, "Failed to remove VirtualMachineSnapshot finalizer")
+			return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
+		}
+		return reconcile.Result{}, nil
 	}
 
 	content, err := r.getContent(vmSnapshot)
@@ -318,11 +327,9 @@ func (r *VirtualMachineSnapshotReconciler) getVolumeSnapshotClass(storageClassNa
 	}
 
 	storageClass := obj.DeepCopy()
-	fmt.Println("storageClass => ", storageClass)
 	var matches []snapshotv1.VolumeSnapshotClass
 	volumeSnapshotClasses := r.getVolumeSnapshotClasses()
 	for _, volumeSnapshotClass := range volumeSnapshotClasses {
-		fmt.Println("volumeSnapshotClass => ", volumeSnapshotClass)
 		if volumeSnapshotClass.Driver == storageClass.Provisioner {
 			matches = append(matches, volumeSnapshotClass)
 		}
@@ -484,9 +491,13 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 			//	vmSnapshotCpy.Status.Phase = hitoseacomv1.Succeeded
 			//}
 			vmSnapshotCpy.Status.VirtualMachineSnapshotContentName = &content.Name
-			//vmSnapshotCpy.Status.CreationTime = content.Status.CreationTime
-			//vmSnapshotCpy.Status.ReadyToUse = *content.Status.ReadyToUse
-			vmSnapshotCpy.Status.Error = content.Status.Error
+			if content.Status != nil {
+				vmSnapshotCpy.Status.CreationTime = content.Status.CreationTime
+				vmSnapshotCpy.Status.ReadyToUse = content.Status.ReadyToUse
+			}
+			if content.Status.Error != nil {
+				vmSnapshotCpy.Status.Error = content.Status.Error
+			}
 		}
 	}
 	if vmSnapshotDeadlineExceeded(vmSnapshotCpy) {

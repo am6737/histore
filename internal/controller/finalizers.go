@@ -73,10 +73,10 @@ func (r *VirtualMachineSnapshotReconciler) addFinalizerToVms(vms *hitoseacomv1.V
 // removeFinalizerFromVR removes the VR finalizer from the VolumeReplication instance.
 func (r *VirtualMachineSnapshotReconciler) removeFinalizerFromVms(vms *hitoseacomv1.VirtualMachineSnapshot) error {
 	if contains(vms.ObjectMeta.Finalizers, vmSnapshotFinalizer) {
-		r.Log.Info("removing finalizer from volumeReplication object", "Finalizer", vmSnapshotFinalizer)
+		r.Log.Info("removing finalizer from VirtualMachineSnapshot object", "Finalizer", vmSnapshotFinalizer)
 		vms.ObjectMeta.Finalizers = remove(vms.ObjectMeta.Finalizers, vmSnapshotFinalizer)
 		if err := r.Client.Update(context.TODO(), vms); err != nil {
-			return fmt.Errorf("failed to remove finalizer (%s) from VolumeReplication resource"+
+			return fmt.Errorf("failed to remove finalizer (%s) from VirtualMachineSnapshot resource"+
 				" (%s/%s), %w",
 				vmSnapshotFinalizer, vms.Namespace, vms.Name, err)
 		}

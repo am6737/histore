@@ -25,6 +25,7 @@ import (
 	librbd "github.com/ceph/go-ceph/rbd"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	"github.com/gookit/goutil/dump"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	"google.golang.org/grpc/codes"
 	corev1 "k8s.io/api/core/v1"
@@ -136,7 +137,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		content.Status = &hitoseacomv1.VirtualMachineSnapshotContentStatus{
 			ReadyToUse:   &f,
 			CreationTime: currentTime(),
-			Error:        translateError(&hitoseacomv1.Error{}),
+			//Error:        translateError(&hitoseacomv1.Error{}),
 		}
 		for _, v := range content.Spec.VolumeBackups {
 			content.Status.VolumeStatus = append(content.Status.VolumeStatus, hitoseacomv1.VolumeStatus{
@@ -145,6 +146,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 				ReadyToUse: false,
 			})
 		}
+		dump.P("content.Status.VolumeStatus => ", content.Status.VolumeStatus)
 		if err := r.Status().Update(ctx, content); err != nil {
 			return reconcile.Result{
 				RequeueAfter: 15 * time.Second,
@@ -194,7 +196,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		//}
 
 		if currentlyError {
-			log.Log.V(3).Info("Not creating snapshot %s because in error state", vsName)
+			log.Log.V(1).Info("Not creating snapshot %s because in error state", vsName)
 			//skippedSnapshots = append(skippedSnapshots, vsName)
 			continue
 		}
@@ -346,7 +348,7 @@ func (r *VirtualMachineSnapshotContentReconciler) handleDeletion(content *hitose
 	for _, v := range content.Status.VolumeStatus {
 		r.Log.Info("rbd deleting", "volumeHandle", v.SlaveVolumeHandle)
 		if err := r.DeleteVolumeSnapshot(context.Background(), v.SlaveVolumeHandle, secret, map[string]string{}); err != nil {
-			r.Log.Error(err, "Failed to add PersistentVolumeClaim finalizer")
+			r.Log.Error(err, "Failed to add VirtualMachineSnapshotContent finalizer")
 			continue
 		}
 	}
@@ -411,7 +413,6 @@ func (r *VirtualMachineSnapshotContentReconciler) DeleteVolumeSnapshot(ctx conte
 	defer cr.DeleteCredentials()
 
 	vol, err := rbd.GenVolFromVolID(ctx, volumeHandle, cr, secrets)
-	defer vol.Destroy()
 	if err != nil {
 		if errors.Is(err, librbd.ErrNotFound) {
 			//log.DebugLog(ctx, "image %s encrypted state not set", ri)
@@ -420,6 +421,7 @@ func (r *VirtualMachineSnapshotContentReconciler) DeleteVolumeSnapshot(ctx conte
 		}
 		return err
 	}
+	defer vol.Destroy()
 
 	return vol.DeleteImage(ctx)
 }
