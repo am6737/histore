@@ -219,7 +219,6 @@ func (r *ScheduleReconciler) getNextRunTime(schedule string, now time.Time) time
 func (r *ScheduleReconciler) backupSnapshots(ctx context.Context, schedule *hitoseacomv1.Schedule) error {
 	nextRunTime := schedule.Status.NextBackup.Time
 	if r.ifDue(nextRunTime, r.Clock.Now()) {
-		r.Log.Info("创建快照handler", "namespace", schedule.Namespace)
 		vmList := &kubevirtv1.VirtualMachineList{}
 		if err := r.Client.List(context.TODO(), vmList); err != nil {
 			r.Log.Error(err, "get vm list")
@@ -227,8 +226,9 @@ func (r *ScheduleReconciler) backupSnapshots(ctx context.Context, schedule *hito
 		}
 		oldt := schedule.Status.LastBackup
 		for _, vm := range vmList.Items {
-			r.Log.Info("创建快照", "Name", "Snap-"+vm.Name)
-			if err := r.Snap.CreateSnapshot(ctx, "schedule-snapshot-"+strconv.FormatInt(time.Now().Unix(), 10)+"-"+vm.Name, vm.Namespace, "", vm.Name); err != nil {
+			name := "schedule-snapshot-" + strconv.FormatInt(time.Now().Unix(), 10) + "-" + vm.Name
+			r.Log.Info("Attempting to create Scheduled Tasks", "Name", name)
+			if err := r.Snap.CreateSnapshot(ctx, name, vm.Namespace, "", vm.Name); err != nil {
 				r.Log.Error(err, "CreateSnapshot")
 				continue
 			}

@@ -576,7 +576,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 				Phase:      hitoseacomv1.VolumePromote,
 			})
 		}
-		r.Log.Info("wait demote master rbd", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+		r.Log.Info("wait demote master rbd   ", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.DemoteImage(); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
@@ -613,7 +613,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 				Phase:      hitoseacomv1.VolumePromote,
 			})
 		}
-		r.Log.Info("wait promote slave rbd", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+		r.Log.Info("wait promote slave rbd   ", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.PromoteImage(false); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
