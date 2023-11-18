@@ -131,6 +131,10 @@ type ScheduleStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:resource:shortName=hvmss
+//+kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
+//+kubebuilder:printcolumn:name="NextBackup",type="string",JSONPath=".status.nextBackup"
+//+kubebuilder:printcolumn:name="NextDelete",type="string",JSONPath=".status.nextDelete"
 
 // Schedule is the Schema for the schedules API
 type Schedule struct {

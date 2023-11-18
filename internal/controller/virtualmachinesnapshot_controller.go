@@ -291,8 +291,14 @@ func (r *VirtualMachineSnapshotReconciler) getSnapshotPVC(namespace, volumeName 
 
 	volumeSnapshotClass, err := r.getVolumeSnapshotClass(*pvc.Spec.StorageClassName)
 	if err != nil {
+		r.Log.Error(err, "No snapshot storage class for PVC", pvc.Namespace, pvc.Name)
 		return nil, err
 	}
+	//
+	//if volumeSnapshotClass == "" {
+	//	r.Log.Info("No snapshot storage class for PVC", pvc.Namespace, pvc.Name)
+	//	return pvc, nil
+	//}
 
 	if volumeSnapshotClass != "" {
 		return pvc, nil
@@ -305,21 +311,25 @@ func (r *VirtualMachineSnapshotReconciler) getVolumeSnapshotClass(storageClassNa
 
 	obj := &storagev1.StorageClass{}
 	if err := r.Client.Get(context.TODO(), client.ObjectKey{Name: storageClassName}, obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
 		return "", err
 	}
 
 	storageClass := obj.DeepCopy()
-
+	fmt.Println("storageClass => ", storageClass)
 	var matches []snapshotv1.VolumeSnapshotClass
 	volumeSnapshotClasses := r.getVolumeSnapshotClasses()
 	for _, volumeSnapshotClass := range volumeSnapshotClasses {
+		fmt.Println("volumeSnapshotClass => ", volumeSnapshotClass)
 		if volumeSnapshotClass.Driver == storageClass.Provisioner {
 			matches = append(matches, volumeSnapshotClass)
 		}
 	}
 
 	if len(matches) == 0 {
-		//log.Log.Warningf("No VolumeSnapshotClass for %s", storageClassName)
+		log.Log.Info(fmt.Sprintf("No VolumeSnapshotClass for %s", storageClassName))
 		return "", nil
 	}
 

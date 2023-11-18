@@ -119,7 +119,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 			r.Log.Error(err, "handleDeletion")
 			return reconcile.Result{RequeueAfter: 15 * time.Second}, err
 		}
-		if err := r.removeFinalizerFromVmsc(content); err != nil {
+		if err = r.removeFinalizerFromVmsc(content); err != nil {
 			logger.Error(err, "Failed to remove VirtualMachineSnapshotContent finalizer")
 			return reconcile.Result{RequeueAfter: 15 * time.Second}, err
 		}
@@ -134,9 +134,9 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 	//currentlyCreated := vmSnapshotContentCreated(content)
 	currentlyError := content.Status.Error != nil
 
-	if len(content.Status.VolumeStatus) == 0 {
+	if content.Status == nil {
 		f := false
-		content.Status = hitoseacomv1.VirtualMachineSnapshotContentStatus{
+		content.Status = &hitoseacomv1.VirtualMachineSnapshotContentStatus{
 			ReadyToUse:   &f,
 			CreationTime: currentTime(),
 		}
@@ -731,7 +731,6 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 		}
 		phase++
 	} else if phase != hitoseacomv1.Complete {
-		fmt.Println("phase != hitoseacomv1.Complete contentCpy.Status.VolumeStatus[vindex] => ", contentCpy.Status.VolumeStatus[vindex])
 		slaveVolumeHandle = contentCpy.Status.VolumeStatus[vindex].SlaveVolumeHandle
 		cloneRbd, err = rbd.GenVolFromVolID(ctx, r.getSlaveVolumeHandle(slaveVolumeHandle, msc.ClusterID), masterCr, masterSecret)
 		defer cloneRbd.Destroy()
@@ -848,8 +847,8 @@ func (r *VirtualMachineSnapshotContentReconciler) waitForSlaveImageSync(status h
 		// 定义一个变量来跟踪当前步骤
 		currentStep := status.Phase
 		// 定义条件函数，检查对象状态是否已更新
-		fmt.Println("waitForSlaveImageSync currentStep => ", currentStep)
 		rbdConditionFunc := func() (bool, error) {
+			fmt.Println("waitForSlaveImageSync currentStep => ", currentStep)
 			time.Sleep(scheduleSyncPeriod)
 			// 根据当前步骤执行相应的操作
 			switch currentStep {

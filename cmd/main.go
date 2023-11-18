@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	clocks "k8s.io/utils/clock"
 	"os"
 	"time"
@@ -60,6 +61,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(kubevirtv1.AddToScheme(scheme))
+
+	utilruntime.Must(snapshotv1.AddToScheme(scheme))
 
 	utilruntime.Must(cdiv1.AddToScheme(scheme))
 

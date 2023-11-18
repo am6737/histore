@@ -78,7 +78,7 @@ func (p *PeriodicalEnqueueSource) Start(ctx context.Context, h handler.EventHand
 			return
 		}
 		if meta.LenList(p.objList) == 0 {
-			p.logger.Info("no resources, skip")
+			//p.logger.Info("no resources, skip")
 			return
 		}
 		if p.option.OrderFunc != nil {
