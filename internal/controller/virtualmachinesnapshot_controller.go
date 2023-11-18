@@ -485,19 +485,12 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 			}
 		}(r, vmSnapshotCpy)
 		//AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
-		if content != nil {
+		if content != nil && content.Status != nil {
 			// content exists and is initialized
-			//if *content.Status.ReadyToUse {
-			//	vmSnapshotCpy.Status.Phase = hitoseacomv1.Succeeded
-			//}
 			vmSnapshotCpy.Status.VirtualMachineSnapshotContentName = &content.Name
-			if content.Status != nil {
-				vmSnapshotCpy.Status.CreationTime = content.Status.CreationTime
-				vmSnapshotCpy.Status.ReadyToUse = content.Status.ReadyToUse
-			}
-			if content.Status.Error != nil {
-				vmSnapshotCpy.Status.Error = content.Status.Error
-			}
+			vmSnapshotCpy.Status.CreationTime = content.Status.CreationTime
+			vmSnapshotCpy.Status.ReadyToUse = content.Status.ReadyToUse
+			vmSnapshotCpy.Status.Error = content.Status.Error
 		}
 	}
 	if vmSnapshotDeadlineExceeded(vmSnapshotCpy) {

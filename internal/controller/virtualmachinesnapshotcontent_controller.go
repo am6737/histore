@@ -25,7 +25,6 @@ import (
 	librbd "github.com/ceph/go-ceph/rbd"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
-	"github.com/gookit/goutil/dump"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	"google.golang.org/grpc/codes"
 	corev1 "k8s.io/api/core/v1"
@@ -137,7 +136,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		content.Status = &hitoseacomv1.VirtualMachineSnapshotContentStatus{
 			ReadyToUse:   &f,
 			CreationTime: currentTime(),
-			//Error:        translateError(&hitoseacomv1.Error{}),
+			Error:        nil,
 		}
 		for _, v := range content.Spec.VolumeBackups {
 			content.Status.VolumeStatus = append(content.Status.VolumeStatus, hitoseacomv1.VolumeStatus{
@@ -146,7 +145,6 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 				ReadyToUse: false,
 			})
 		}
-		dump.P("content.Status.VolumeStatus => ", content.Status.VolumeStatus)
 		if err := r.Status().Update(ctx, content); err != nil {
 			return reconcile.Result{
 				RequeueAfter: 15 * time.Second,
@@ -196,7 +194,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		//}
 
 		if currentlyError {
-			log.Log.V(1).Info("Not creating snapshot %s because in error state", vsName)
+			log.Log.V(1).Info(fmt.Sprintf("Not creating snapshot %s because in error state", vsName))
 			//skippedSnapshots = append(skippedSnapshots, vsName)
 			continue
 		}
@@ -787,7 +785,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 			return false, err
 		}
 		r.Recorder.Eventf(contentCpy, corev1.EventTypeNormal, volumeCloneCreateEvent, fmt.Sprintf("Successfully created VolumeHandle %s", slaveVolumeHandle))
-		r.Log.Info("sync rbd complete")
+		//r.Log.Info("sync rbd complete")
 	default:
 		status := contentCpy.Status.VolumeStatus[vindex]
 		if err = r.waitForSlaveImageSync(status, cloneRbd, slaveRbd, DemoteImageHandler, PromoteImageHandler); err != nil {
@@ -851,7 +849,6 @@ func (r *VirtualMachineSnapshotContentReconciler) waitForSlaveImageSync(status h
 		currentStep := status.Phase
 		// 定义条件函数，检查对象状态是否已更新
 		rbdConditionFunc := func() (bool, error) {
-			fmt.Println("waitForSlaveImageSync currentStep => ", currentStep)
 			time.Sleep(scheduleSyncPeriod)
 			// 根据当前步骤执行相应的操作
 			switch currentStep {
