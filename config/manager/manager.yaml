@@ -100,7 +100,7 @@ spec:
             cpu: 10m
             memory: 64Mi
         volumeMounts:
-          - name: ceph-csi-config-master
+          - name: ceph-csi-config
             mountPath: /etc/ceph-csi-config/
           - name: ceph-config
             mountPath: /etc/ceph/
@@ -110,6 +110,6 @@ spec:
         - name: ceph-config
           configMap:
             name: ceph-config
-        - name: ceph-csi-config-master
+        - name: ceph-csi-config
           configMap:
-            name: ceph-csi-config-master
+            name: ceph-csi-config
