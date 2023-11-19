@@ -18,6 +18,15 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: AGE
+      type: date
+    - jsonPath: .spec.source.kind
+      name: SourceKind
+      type: string
+    - jsonPath: .spec.source.name
+      name: SourceName
+      type: string
     - jsonPath: .status.phase
       name: Phase
       type: string

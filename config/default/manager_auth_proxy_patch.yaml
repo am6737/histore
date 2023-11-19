@@ -53,5 +53,3 @@ spec:
         - "--health-probe-bind-address=:8081"
         - "--metrics-bind-address=127.0.0.1:8080"
         - "--leader-elect"
-        - "--master-csi-address=/var/lib/kubelet/plugins/rbd.csi.ceph.com/csi-addons.sock"
-        - "--slave-csi-address=/var/lib/kubelet/plugins/slave.rbd.csi.ceph.com/csi-addons.sock"

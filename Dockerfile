@@ -7,6 +7,7 @@ ARG GOROOT=/usr/local/go
 # standard Golang options
 ARG GOLANG_VERSION=1.20.4
 ARG GO111MODULE=on
+ARG GOPROXY=https://goproxy.cn
 
 RUN mkdir -p ${GOROOT} && \
     curl https://storage.googleapis.com/golang/go${GOLANG_VERSION}.linux-${TARGETARCH}.tar.gz | tar xzf - -C ${GOROOT} --strip-components=1

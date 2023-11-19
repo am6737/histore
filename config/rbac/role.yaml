@@ -32,6 +32,32 @@ rules:
 - apiGroups:
   - hitosea.com
   resources:
+  - schedules
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - hitosea.com
+  resources:
+  - schedules/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - hitosea.com
+  resources:
+  - schedules/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - hitosea.com
+  resources:
   - virtualmachinerestores
   verbs:
   - create
@@ -51,6 +77,14 @@ rules:
   - hitosea.com
   resources:
   - virtualmachinerestores/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - hitosea.com
+  resources:
+  - virtualmachineschedulesnapshots/status
   verbs:
   - get
   - patch
@@ -134,11 +168,11 @@ rules:
   resources:
   - volumesnapshotcontents
   verbs:
+  - delete
   - get
   - list
-  - watch
   - update
-  - delete
+  - watch
 - apiGroups:
   - snapshot.storage.k8s.io
   resources:
@@ -154,10 +188,10 @@ rules:
   - volumesnapshots
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
-  - delete
 - apiGroups:
   - snapshot.storage.k8s.io
   resources:

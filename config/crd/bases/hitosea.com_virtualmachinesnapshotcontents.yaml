@@ -12,10 +12,15 @@ spec:
     kind: VirtualMachineSnapshotContent
     listKind: VirtualMachineSnapshotContentList
     plural: virtualmachinesnapshotcontents
+    shortNames:
+    - hvmsc
     singular: virtualmachinesnapshotcontent
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: AGE
+      type: date
     - jsonPath: .status.readyToUse
       name: ReadyToUse
       type: boolean
