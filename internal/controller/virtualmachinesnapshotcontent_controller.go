@@ -216,7 +216,6 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		if err := r.Get(ctx, req.NamespacedName, newContent); err != nil {
 			return err
 		}
-		//f := false
 		complete := 0
 		for _, vStatus := range newContent.Status.VolumeStatus {
 			if vStatus.ReadyToUse {
@@ -762,18 +761,21 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 		fallthrough
 	case hitoseacomv1.EnableReplication:
 		if err = EnabledImageHandler(cloneRbd); err != nil {
+			r.Log.Error(err, "EnabledImageHandler")
 			return false, err
 		}
 	case hitoseacomv1.DisableReplication:
 		if err = DisableImageHandler(slaveRbd); err != nil {
+			r.Log.Error(err, "DisableImageHandler")
 			return false, err
 		}
 	case hitoseacomv1.Complete:
 		slaveVolumeHandle = content.Status.VolumeStatus[vindex].SlaveVolumeHandle
+		t := true
 		if err = r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
 			VolumeName: volumeBackup.VolumeName,
 			Phase:      hitoseacomv1.Complete,
-			ReadyToUse: true,
+			ReadyToUse: t,
 		}); err != nil {
 			//if apierrors.IsConflict(err) {
 			//	log.Log.V(0).Info("Retrying with patch due to conflict error")
@@ -783,6 +785,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 			//		return false, err
 			//	}
 			//}
+			r.Log.Error(err, "updateVolumeStatus Complete")
 			return false, err
 		}
 		r.Recorder.Eventf(contentCpy, corev1.EventTypeNormal, volumeCloneCreateEvent, fmt.Sprintf("Successfully created VolumeHandle %s", slaveVolumeHandle))
@@ -790,9 +793,11 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 	default:
 		status := contentCpy.Status.VolumeStatus[vindex]
 		if err = r.waitForSlaveImageSync(status, cloneRbd, slaveRbd, DemoteImageHandler, PromoteImageHandler); err != nil {
+			r.Log.Error(err, "waitForSlaveImageSync")
 			return false, err
 		}
 		if err = r.waitForMasterImageSync(cloneRbd, slaveRbd, DisableImageHandler); err != nil {
+			r.Log.Error(err, "waitForMasterImageSync")
 			return false, err
 		}
 	}
