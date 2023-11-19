@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"github.com/am6737/histore/pkg/ceph/rbd"
 	"github.com/am6737/histore/pkg/ceph/util"
+	"github.com/am6737/histore/pkg/config"
 	librbd "github.com/ceph/go-ceph/rbd"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
@@ -108,8 +109,6 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 	if vmSnapshotContentDeleting(content) {
 		SecretName := content.Annotations[prefixedSnapshotDeleteSecretNameKey]
 		SecretNamespace := content.Annotations[prefixedSnapshotDeleteSecretNamespaceKey]
-		// check if the object is being deleted
-
 		secret, err := r.getSecret(SecretNamespace, SecretName)
 		if err != nil {
 			r.Log.Error(err, "getSecret")
@@ -229,7 +228,6 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 			if err := r.Status().Update(ctx, newContent); err != nil {
 				return err
 			}
-			// 3. 找到关联的 VirtualMachineSnapshot 对象
 			for _, ownerRef := range content.OwnerReferences {
 				if ownerRef.Kind == "VirtualMachineSnapshot" {
 					vmSnapshot := &hitoseacomv1.VirtualMachineSnapshot{}
@@ -248,7 +246,6 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		return nil
 	}
 
-	// 执行 ReadyToUse 更新
 	if err := updateReadyToUseStatus(); err != nil {
 		return reconcile.Result{
 			RequeueAfter: 15 * time.Second,
@@ -423,6 +420,8 @@ func (r *VirtualMachineSnapshotContentReconciler) DeleteVolumeSnapshot(ctx conte
 	return vol.DeleteImage(ctx)
 }
 
+// 写一个函数用于获取0001-0024-4fdca63c-4061-11ee-ad1c-656866f2389c-0000000000000002-1fc795be-49f0-4b5e-b85d-ce1b0314201b字符串中0000000000000002的值与传进来的值对比 是否一样如果不一样就替换 这个字符串是ceph-csi的volumehandle
+
 func (r *VirtualMachineSnapshotContentReconciler) updateVolumeStatus(content *hitoseacomv1.VirtualMachineSnapshotContent, newVolumeStatus hitoseacomv1.VolumeStatus) error {
 	// Find the index of the target volumeName in volumeStatus slice
 	var targetIndex int
@@ -463,9 +462,7 @@ func (r *VirtualMachineSnapshotContentReconciler) updateVolumeStatus(content *hi
 	//return nil
 }
 
-func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
-	ctx context.Context,
-	masterVolumeHandle string,
+func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Context, masterVolumeHandle string,
 	content *hitoseacomv1.VirtualMachineSnapshotContent,
 	volumeBackup *hitoseacomv1.VolumeBackup,
 ) (bool, error) {
@@ -476,11 +473,11 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 		TTL                = 3 * time.Minute
 	)
 
-	//contentCpy := &hitoseacomv1.VirtualMachineSnapshotContent{}
-	//if err := r.Get(ctx, client.ObjectKey{Namespace: content.Namespace, Name: content.Name}, contentCpy); err != nil {
-	//	return false, err
-	//}
-	contentCpy := content.DeepCopy()
+	ct := &hitoseacomv1.VirtualMachineSnapshotContent{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: content.Namespace, Name: content.Name}, ct); err != nil {
+		return false, err
+	}
+	contentCpy := ct.DeepCopy()
 	vindex := 0
 	is := false
 	for k, v := range contentCpy.Status.VolumeStatus {
@@ -703,6 +700,10 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 		}
 		slaveVolumeHandle = GenerateSlaveVolumeHandle(masterVolumeHandle, ssc.ClusterID, cloneRbdName)
 
+		if config.SlavePoolID != 0 {
+			slaveVolumeHandle = replacePool(slaveVolumeHandle, config.SlavePoolID)
+		}
+
 		cloneRbd, err = rbd.GenVolFromVolID(ctx, GetCloneVolumeHandleFromVolumeHandle(masterVolumeHandle, cloneRbdName), masterCr, masterSecret)
 		defer cloneRbd.Destroy()
 		if err != nil {
@@ -728,6 +729,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(
 			MasterVolumeHandle: masterVolumeHandle,
 		}); err != nil {
 			deleteClone = true
+			r.Log.Error(err, "WaitForCreation updateVolumeStatus")
 			return false, err
 		}
 		phase++
@@ -1060,6 +1062,13 @@ func (r *VirtualMachineSnapshotContentReconciler) getSlaveVolumeHandle(volumeHan
 	re := regexp.MustCompile(`\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
 	//slaveVolumeHandle := replaceString(volumeHandle, re.FindString(volumeHandle), "5e709abc-419e-11ee-a132-af7f7bf3bfc0")
 	return replaceString(volumeHandle, re.FindString(volumeHandle), clusterID)
+}
+
+func replacePool(vh string, newValue int64) string {
+	parts := strings.Split(vh, "-")
+	newValueString := fmt.Sprintf("%016d", newValue)
+	parts[7] = newValueString
+	return strings.Join(parts, "-")
 }
 
 func GenerateSlaveVolumeHandle(masterVolumeHandle, clusterID, sRbdName string) string {

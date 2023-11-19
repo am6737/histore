@@ -224,8 +224,16 @@ func (r *ScheduleReconciler) backupSnapshots(ctx context.Context, schedule *hito
 			r.Log.Error(err, "get vm list")
 			return err
 		}
-		oldt := schedule.Status.LastBackup
-		for _, vm := range vmList.Items {
+
+		// 滤掉虚拟机
+		var filteredVMSSList []kubevirtv1.VirtualMachine
+		for _, vms := range vmList.Items {
+			if vms.Status.Ready {
+				filteredVMSSList = append(filteredVMSSList, vms)
+			}
+		}
+
+		for _, vm := range filteredVMSSList {
 			name := "schedule-snapshot-" + strconv.FormatInt(time.Now().Unix(), 10) + "-" + vm.Name
 			r.Log.Info("Attempting to create Scheduled Tasks", "Name", name)
 			if err := r.Snap.CreateSnapshot(ctx, name, vm.Namespace, "", vm.Name); err != nil {
@@ -233,6 +241,8 @@ func (r *ScheduleReconciler) backupSnapshots(ctx context.Context, schedule *hito
 				continue
 			}
 		}
+
+		oldt := schedule.Status.LastBackup
 		t1 := r.Clock.Now()
 		schedule.Status.LastBackup = &metav1.Time{Time: t1}
 		schedule.Status.NextBackup = &metav1.Time{Time: r.getNextRunTime(schedule.Spec.Schedule, t1)}
@@ -256,9 +266,9 @@ func (r *ScheduleReconciler) deleteExpiredSnapshots(ctx context.Context, schedul
 
 		// 先过滤掉特定标签的快照
 		var filteredVMSSList []hitoseacomv1.VirtualMachineSnapshot
-		for _, vmss := range vmsList.Items {
-			if _, ok := vmss.ObjectMeta.Labels[ScheduleSnapshotLabelKey]; ok && vmss.Status.Phase != hitoseacomv1.InProgress {
-				filteredVMSSList = append(filteredVMSSList, vmss)
+		for _, vms := range vmsList.Items {
+			if _, ok := vms.ObjectMeta.Labels[ScheduleSnapshotLabelKey]; ok && vms.Status.Phase != hitoseacomv1.InProgress {
+				filteredVMSSList = append(filteredVMSSList, vms)
 			}
 		}
 

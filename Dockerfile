@@ -38,7 +38,7 @@ RUN dnf -y install --nodocs \
 # was called. For example, if we call make docker-build in a local env which has the Apple Silicon M1 SO
 # the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
-RUN CGO_ENABLED=1 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
@@ -53,23 +53,15 @@ RUN CGO_ENABLED=1 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o ma
 #
 #ENTRYPOINT ["/manager"]
 
-# 使用官方的 Ubuntu 20.04 镜像作为基础镜像
 FROM debian:bullseye-slim
-# 添加 Ceph 仓库的 GPG 密钥
 RUN apt update && apt install wget gnupg -y
 RUN wget -q -O- 'https://download.ceph.com/keys/release.asc' | apt-key add -
-# 添加 Ceph 仓库源
 RUN echo deb https://download.ceph.com/debian-pacific/ focal main | tee /etc/apt/sources.list.d/ceph.list
-# 更新并安装所需软件包
 RUN apt-get update && apt-get install -y \
     libcephfs-dev \
     librbd-dev \
     librados-dev
-
-# 清理 apt 缓存，减少镜像大小
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
-
 COPY --from=builder /workspace/manager .
 USER 65532:65532
-
 ENTRYPOINT ["/manager"]

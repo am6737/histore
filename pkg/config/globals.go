@@ -5,7 +5,8 @@ func SetGlobals(cfg *CephConfig) {
 }
 
 var (
-	DC *CephConfig
+	DC          *CephConfig
+	SlavePoolID int64
 )
 
 var MasterCephCsiCfg *CephCsiConfig

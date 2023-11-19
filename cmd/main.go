@@ -77,6 +77,7 @@ func main() {
 	cfg := config.NewDriverConfig()
 	flag.StringVar(&cfg.MasterStorageClass, "master-storage-class", "csi-cephrdb-sc-master", "Address of the CSI driver socket.")
 	flag.StringVar(&cfg.SlaveStorageClass, "slave-storage-class", "csi-cephrdb-sc-slave", "Address of the Slave CSI driver socket.")
+	flag.Int64Var(&config.SlavePoolID, "slave-pool-id", 0, "Pool ID of the backup cluster")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
