@@ -566,7 +566,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 			return err
 		}
 		if !state.Primary {
-			r.Log.Info(fmt.Sprintf("master rbd state => %v", state))
+			//r.Log.Info(fmt.Sprintf("master rbd state => %v", state))
 			return r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
 				VolumeName: volumeBackup.VolumeName,
 				Phase:      hitoseacomv1.VolumePromote,
@@ -603,10 +603,10 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 			return err
 		}
 		if state.Primary {
-			r.Log.Info(fmt.Sprintf("slave rbd state => %v", state))
+			//r.Log.Info(fmt.Sprintf("slave rbd state => %v", state))
 			return r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
 				VolumeName: volumeBackup.VolumeName,
-				Phase:      hitoseacomv1.VolumePromote,
+				Phase:      hitoseacomv1.DisableReplication,
 			})
 		}
 		r.Log.Info("wait promote slave rbd   ", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
@@ -625,7 +625,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 		}
 		return r.updateVolumeStatus(contentCpy, hitoseacomv1.VolumeStatus{
 			VolumeName: volumeBackup.VolumeName,
-			Phase:      hitoseacomv1.VolumePromote,
+			Phase:      hitoseacomv1.DisableReplication,
 		})
 	}
 
