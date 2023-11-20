@@ -208,7 +208,7 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 			continue
 		}
 
-		volumeSnapshotName := fmt.Sprintf("histore-vmsnapshot-%s-volume-%s", vmSnapshot.UID, pvcName)
+		volumeSnapshotName := fmt.Sprintf("vmsnapshot-%s-volume-%s", vmSnapshot.UID, pvcName)
 		vb := hitoseacomv1.VolumeBackup{
 			VolumeName: volumeName,
 			PersistentVolumeClaim: hitoseacomv1.PersistentVolumeClaim{

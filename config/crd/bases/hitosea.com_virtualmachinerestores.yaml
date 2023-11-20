@@ -68,6 +68,32 @@ spec:
             properties:
               complete:
                 type: boolean
+              conditions:
+                items:
+                  description: Condition defines conditions
+                  properties:
+                    lastProbeTime:
+                      format: date-time
+                      nullable: true
+                      type: string
+                    lastTransitionTime:
+                      format: date-time
+                      nullable: true
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      description: ConditionType is the const type for Conditions
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
               deletedDataVolumes:
                 items:
                   type: string

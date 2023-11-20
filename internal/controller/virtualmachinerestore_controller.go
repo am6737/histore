@@ -36,7 +36,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"strings"
+	"time"
 )
 
 var restoreAnnotationsToDelete = []string{
@@ -83,7 +85,10 @@ func (r *VirtualMachineRestoreReconciler) Reconcile(ctx context.Context, req ctr
 	// TODO(user): your logic here
 	vmRestoreIn := &hitoseacomv1.VirtualMachineRestore{}
 	if err := r.Client.Get(ctx, req.NamespacedName, vmRestoreIn, &client.GetOptions{}); err != nil {
-		r.Log.Error(err, "Get 1")
+		if apierrors.IsNotFound(err) {
+			// 对象不存在，可能已被删除，可以返回一个无需处理的结果
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -110,19 +115,15 @@ func (r *VirtualMachineRestoreReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, err
 	}
 
-	fmt.Println("target ==> ", target)
-
 	if len(vmRestoreOut.OwnerReferences) == 0 {
 		target.Own(vmRestoreOut)
 		//updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Initializing VirtualMachineRestore"))
 		//updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Initializing VirtualMachineRestore"))
 	}
 
-	fmt.Println("------------1")
-
-	//if err = target.UpdateRestoreInProgress(); err != nil {
-	//	return ctrl.Result{}, err
-	//}
+	if err = target.UpdateRestoreInProgress(); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// let's make sure everything is initialized properly before continuing
 	//if !equality.Semantic.DeepEqual(vmRestoreIn, vmRestoreOut) {
@@ -143,68 +144,82 @@ func (r *VirtualMachineRestoreReconciler) Reconcile(ctx context.Context, req ctr
 	//}
 	//dump.Println(dvCpy.Name)
 
-	fmt.Println("------------2")
+	updated, err := r.reconcileVolumeRestores(vmRestoreOut, target)
+	if err != nil {
+		r.Log.Error(err, "Error reconciling VolumeRestores")
+		return ctrl.Result{}, err
+	}
+	if updated {
+		r.Log.Info("reconcileVolumeRestores updated")
+		updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Creating new PVCs"))
+		updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for new PVCs"))
+		if err = r.Status().Update(ctx, vmRestoreOut); err != nil {
+			return reconcile.Result{
+				RequeueAfter: 15 * time.Second,
+			}, nil
+		}
+		return ctrl.Result{}, nil
+	}
 
-	//updated, err := r.reconcileVolumeRestores(vmRestoreOut, target)
-	//if err != nil {
-	//	r.Log.Error(err, "Error reconciling VolumeRestores")
-	//	return ctrl.Result{}, err
-	//}
-	//if updated {
-	//	r.Log.Info("reconcileVolumeRestores updated")
-	//	return ctrl.Result{}, nil
-	//	//updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Creating new PVCs"))
-	//	//updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for new PVCs"))
-	//	//return 0, ctrl.doUpdate(vmRestoreIn, vmRestoreOut)
-	//}
-	//fmt.Println("------------3")
-	//
-	//ready, err := target.Ready()
-	//if err != nil {
-	//	r.Log.Error(err, "Error checking target ready")
-	//	return ctrl.Result{}, err
-	//}
-	//if !ready {
-	//	r.Log.Info("Waiting for target to be ready")
-	//	//reason := "Waiting for target to be ready"
-	//	//updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionFalse, reason))
-	//	//updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, reason))
-	//	// try again in 5 secs
-	//	return ctrl.Result{
-	//		Requeue:      true,
-	//		RequeueAfter: 5 * time.Second,
-	//	}, err
-	//}
+	ready, err := target.Ready()
+	if err != nil {
+		r.Log.Error(err, "Error checking target ready")
+		return ctrl.Result{}, err
+	}
+	if !ready {
+		r.Log.Info("Waiting for target to be ready")
+		reason := "Waiting for target to be ready"
+		updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionFalse, reason))
+		updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, reason))
+		return reconcile.Result{
+			Requeue:      true,
+			RequeueAfter: 5 * time.Second,
+		}, nil
+	}
 
-	//updated, err = target.Reconcile()
-	//if err != nil {
-	//	r.Log.Error(err, "Error reconciling target")
-	//	return ctrl.Result{}, err
-	//}
-	//if updated {
-	//	fmt.Println("target updated")
-	//	//updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Updating target spec"))
-	//	//updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for target update"))
-	//	//return ctrl.Result{}, nil
-	//}
-	//
-	//if err = target.Cleanup(); err != nil {
-	//	r.Log.Error(err, "Error cleaning up")
-	//	return ctrl.Result{}, err
-	//}
-	//
-	//updated, err = target.UpdateDoneRestore()
-	//if err != nil {
-	//	r.Log.Error(err, "Error updating done restore")
-	//	return ctrl.Result{}, err
-	//}
-	//if updated {
-	//	//updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Updating target status"))
-	//	//updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for target update"))
-	//	return ctrl.Result{}, nil
-	//}
+	updated, err = target.Reconcile()
+	if err != nil {
+		r.Log.Error(err, "Error reconciling target")
+		return ctrl.Result{}, err
+	}
+	if updated {
+		fmt.Println("target updated")
+		updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Updating target spec"))
+		updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for target update"))
+		if err = r.Status().Update(ctx, vmRestoreOut); err != nil {
+			return reconcile.Result{
+				RequeueAfter: 15 * time.Second,
+			}, nil
+		}
+		return ctrl.Result{}, nil
+	}
+
+	if err = target.Cleanup(); err != nil {
+		r.Log.Error(err, "Error cleaning up")
+		return ctrl.Result{}, err
+	}
+
+	updated, err = target.UpdateDoneRestore()
+	if err != nil {
+		r.Log.Error(err, "Error updating done restore")
+		return ctrl.Result{}, err
+	}
+	if updated {
+		updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Updating target status"))
+		updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for target update"))
+		if err = r.Status().Update(ctx, vmRestoreOut); err != nil {
+			return reconcile.Result{
+				RequeueAfter: 15 * time.Second,
+			}, nil
+		}
+		return ctrl.Result{}, nil
+	}
 
 	return ctrl.Result{}, nil
+}
+
+func updateRestoreCondition(r *hitoseacomv1.VirtualMachineRestore, c hitoseacomv1.Condition) {
+	r.Status.Conditions = updateCondition(r.Status.Conditions, c, true)
 }
 
 func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hitoseacomv1.VirtualMachineRestore, target restoreTarget) (bool, error) {
@@ -221,7 +236,7 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 			continue
 		}
 
-		fmt.Println("vb.VolumeName 2 => ", vb.PersistentVolumeClaim.Name)
+		//fmt.Println("vb.VolumeName 2 => ", vb.PersistentVolumeClaim.Name)
 
 		found := false
 		for _, vr := range vmRestore.Status.Restores {
@@ -245,7 +260,7 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 			restores = append(restores, vr)
 		}
 	}
-	fmt.Println("reconcileVolumeRestores 3")
+	//fmt.Println("reconcileVolumeRestores 3")
 
 	//if !equality.Semantic.DeepEqual(vmRestore.Status.Restores, restores) {
 	//	if len(vmRestore.Status.Restores) > 0 {
@@ -264,28 +279,25 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 		if err != nil {
 			return false, err
 		}
+		fmt.Println("restores pvc = > ", pvc.Name)
 		if pvc == nil {
-			fmt.Println("1426 1")
 			backup, err := getRestoreVolumeBackup(restore.VolumeName, content)
 			if err != nil {
 				log.Log.Error(err, "getRestoreVolumeBackup")
 				return false, err
 			}
-			fmt.Println("1426 2")
 			if err = r.createRestorePVC(vmRestore, target, backup, &restore, content.Spec.Source.VirtualMachine.Name, content.Spec.Source.VirtualMachine.Namespace); err != nil {
 				log.Log.Error(err, "createRestorePVC")
 				return false, err
 			}
-			fmt.Println("1426 3")
 			createdPVC = true
 		} else if pvc.Status.Phase == corev1.ClaimPending {
-			fmt.Println("1426 4")
 			bindingMode, err := r.getBindingMode(pvc)
 			if err != nil {
 				log.Log.Error(err, "getBindingMode")
 				return false, err
 			}
-			fmt.Println("1426 5")
+			//fmt.Println("1426 5")
 			if bindingMode == nil || *bindingMode == storagev1.VolumeBindingImmediate {
 				waitingPVC = true
 			}
@@ -293,7 +305,6 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 			return false, fmt.Errorf("PVC %s/%s in status %q", pvc.Namespace, pvc.Name, pvc.Status.Phase)
 		}
 	}
-	fmt.Println("reconcileVolumeRestores 7")
 
 	return createdPVC || waitingPVC, nil
 }

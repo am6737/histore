@@ -48,6 +48,9 @@ type VirtualMachineRestoreStatus struct {
 
 	// +optional
 	Complete *bool `json:"complete,omitempty"`
+
+	// +optional
+	Conditions []Condition `json:"conditions,omitempty"`
 }
 
 // VolumeRestore contains the data neeed to restore a PVC

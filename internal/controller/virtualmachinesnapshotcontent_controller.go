@@ -135,6 +135,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		content.Status = &hitoseacomv1.VirtualMachineSnapshotContentStatus{
 			ReadyToUse:   &f,
 			CreationTime: currentTime(),
+			VolumeStatus: []hitoseacomv1.VolumeStatus{},
 			Error:        nil,
 		}
 		for _, v := range content.Spec.VolumeBackups {
@@ -420,8 +421,6 @@ func (r *VirtualMachineSnapshotContentReconciler) DeleteVolumeSnapshot(ctx conte
 	return vol.DeleteImage(ctx)
 }
 
-// 写一个函数用于获取0001-0024-4fdca63c-4061-11ee-ad1c-656866f2389c-0000000000000002-1fc795be-49f0-4b5e-b85d-ce1b0314201b字符串中0000000000000002的值与传进来的值对比 是否一样如果不一样就替换 这个字符串是ceph-csi的volumehandle
-
 func (r *VirtualMachineSnapshotContentReconciler) updateVolumeStatus(content *hitoseacomv1.VirtualMachineSnapshotContent, newVolumeStatus hitoseacomv1.VolumeStatus) error {
 	// Find the index of the target volumeName in volumeStatus slice
 	var targetIndex int
@@ -446,6 +445,11 @@ func (r *VirtualMachineSnapshotContentReconciler) updateVolumeStatus(content *hi
 	if newVolumeStatus.Phase != 0 {
 		content.Status.VolumeStatus[targetIndex].Phase = newVolumeStatus.Phase
 	}
+	//if !equality.Semantic.DeepEqual(content.Status.VolumeStatus[targetIndex], newVolumeStatus) {
+	//	//oldStatus.Field1 = newStatus.Field1
+	//	//oldStatus.Field2 = newStatus.Field2
+	//	content.Status.VolumeStatus[targetIndex] = newVolumeStatus
+	//}
 	content.Status.VolumeStatus[targetIndex].ReadyToUse = newVolumeStatus.ReadyToUse
 	return r.Status().Update(context.Background(), content)
 
