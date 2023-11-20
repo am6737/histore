@@ -162,14 +162,12 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 
 	//var deletedSnapshots, skippedSnapshots []string
 	var completionList []string
-	for _, volumeBackup := range content.Spec.VolumeBackups {
+	for k, volumeBackup := range content.Spec.VolumeBackups {
 		if volumeBackup.VolumeSnapshotName == nil {
 			continue
 		}
-		for _, v := range content.Status.VolumeStatus {
-			if v.VolumeName == volumeBackup.VolumeName && v.ReadyToUse {
-				continue
-			}
+		if volumeBackup.VolumeName == content.Status.VolumeStatus[k].VolumeName {
+			continue
 		}
 
 		vsName := *volumeBackup.VolumeSnapshotName

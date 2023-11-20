@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	hitoseacomv1 "github.com/am6737/histore/api/v1"
+	"github.com/gookit/goutil/dump"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,7 +17,7 @@ import (
 const (
 	restoreNameAnnotation = "restore.kubevirt.io/name"
 
-	populatedForPVCAnnotation = "cdiv1.kubevirt.io/storage.populatedFor"
+	populatedForPVCAnnotation = "cdi.kubevirt.io/storage.populatedFor"
 
 	lastRestoreAnnotation = "restore.kubevirt.io/lastRestoreUID"
 
@@ -124,6 +125,7 @@ func (t *vmRestoreTarget) reconcileDataVolumes() (bool, error) {
 	createdDV := false
 	waitingDV := false
 	for _, dvt := range t.vm.Spec.DataVolumeTemplates {
+		dump.P("dvt => ", t.vm.Spec.DataVolumeTemplates)
 		dv, err := t.controller.getDV(t.vm.Namespace, dvt.Name)
 		if err != nil {
 			return false, err
@@ -249,7 +251,7 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 		return false, fmt.Errorf("content 不存在")
 	}
 
-	fmt.Println("reconcileSpec 1")
+	fmt.Println("reconcileSpec 2")
 
 	snapshotVM := content.Spec.Source.VirtualMachine
 	if snapshotVM == nil {
@@ -264,9 +266,13 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 	for i, t := range snapshotVM.Spec.DataVolumeTemplates {
 		t.DeepCopyInto(&newTemplates[i])
 	}
+	fmt.Println("reconcileSpec 3")
 
 	for _, v := range snapshotVM.Spec.Template.Spec.Volumes {
 		nv := v.DeepCopy()
+		dump.Println("nv.DataVolume => ", nv.DataVolume)
+		dump.Println("nv.PersistentVolumeClaim => ", nv.PersistentVolumeClaim)
+		dump.Println("t.vmRestore.Status.Restores ", t.vmRestore.Status.Restores)
 		if nv.DataVolume != nil || nv.PersistentVolumeClaim != nil {
 			for k := range t.vmRestore.Status.Restores {
 				vr := &t.vmRestore.Status.Restores[k]
@@ -306,10 +312,8 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 									updatePVC.Annotations = make(map[string]string)
 								}
 								updatePVC.Annotations[populatedForPVCAnnotation] = dvName
-								// datavolume will take ownership
 								updatePVC.OwnerReferences = nil
-								err = t.controller.Client.Update(context.Background(), updatePVC)
-								if err != nil {
+								if err = t.controller.Client.Update(context.Background(), updatePVC); err != nil {
 									return false, err
 								}
 							}
@@ -343,11 +347,11 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 			// don't restore memory dump volume in the new spec
 			continue
 		}
-		fmt.Println("nv => ", nv)
 		newVolumes = append(newVolumes, *nv)
 	}
-	fmt.Println("reconcileSpec 4")
+	fmt.Println("updatedStatus => ", updatedStatus)
 	if t.doesTargetVMExist() && updatedStatus {
+		fmt.Println("t.doesTargetVMExist() && updatedStatus")
 		// find DataVolumes that will no longer exist
 		for _, cdv := range t.vm.Spec.DataVolumeTemplates {
 			found := false
@@ -365,7 +369,7 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 		}
 		t.vmRestore.Status.DeletedDataVolumes = deletedDataVolumes
 
-		//return true, nil
+		return true, nil
 	}
 	fmt.Println("reconcileSpec 5")
 	var newVM *kubevirtv1.VirtualMachine
@@ -428,7 +432,6 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 }
 
 func (t *vmRestoreTarget) createDataVolume(dvt kubevirtv1.DataVolumeTemplateSpec) (bool, error) {
-	fmt.Println("createDataVolume => ", dvt)
 	pvc, err := t.controller.getPVC(t.vm.Namespace, dvt.Name)
 	if err != nil {
 		return false, err
@@ -448,6 +451,10 @@ func (t *vmRestoreTarget) createDataVolume(dvt kubevirtv1.DataVolumeTemplateSpec
 	}
 	newDataVolume.Annotations[restoreNameAnnotation] = t.vmRestore.Name
 	newDataVolume.Namespace = corev1.NamespaceDefault
+
+	dump.Println("newDataVolume => ", newDataVolume)
+
+	fmt.Println("t.createDataVolume(dvt)")
 
 	if err = t.controller.Client.Create(context.Background(), newDataVolume); err != nil {
 		return false, fmt.Errorf("failed to create restore DataVolume: %v", err)

@@ -23,7 +23,6 @@ import (
 	hitoseacomv1 "github.com/am6737/histore/api/v1"
 	"github.com/am6737/histore/pkg/config"
 	"github.com/go-logr/logr"
-	"github.com/gookit/goutil/dump"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -153,12 +152,9 @@ func (r *VirtualMachineRestoreReconciler) Reconcile(ctx context.Context, req ctr
 		r.Log.Info("reconcileVolumeRestores updated")
 		updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Creating new PVCs"))
 		updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for new PVCs"))
-		if err = r.Status().Update(ctx, vmRestoreOut); err != nil {
-			return reconcile.Result{
-				RequeueAfter: 15 * time.Second,
-			}, nil
-		}
-		return ctrl.Result{}, nil
+		return reconcile.Result{
+			RequeueAfter: 15 * time.Second,
+		}, r.Status().Update(ctx, vmRestoreOut)
 	}
 
 	ready, err := target.Ready()
@@ -262,36 +258,51 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 	}
 	//fmt.Println("reconcileVolumeRestores 3")
 
-	//if !equality.Semantic.DeepEqual(vmRestore.Status.Restores, restores) {
-	//	if len(vmRestore.Status.Restores) > 0 {
-	//		r.Log.Info("VMRestore in strange state")
-	//	}
-	//
-	//	vmRestore.Status.Restores = restores
-	//	return true, nil
-	//}
+	if vmRestore.Status == nil {
+		vmRestore.Status.Restores = restores
+		return true, nil
+	}
+
+	if !equality.Semantic.DeepEqual(vmRestore.Status.Restores, restores) {
+		if len(vmRestore.Status.Restores) > 0 {
+			r.Log.Info("VMRestore in strange state")
+		}
+		fmt.Println("vmRestore.Status.Restores = restores")
+
+		vmRestore.Status.Restores = restores
+		return true, nil
+	}
 
 	createdPVC := false
 	waitingPVC := false
 	for _, restore := range restores {
-		dump.Println(restore)
 		pvc, err := r.getPVC(vmRestore.Namespace, restore.PersistentVolumeClaimName)
 		if err != nil {
 			return false, err
 		}
-		fmt.Println("restores pvc = > ", pvc.Name)
 		if pvc == nil {
 			backup, err := getRestoreVolumeBackup(restore.VolumeName, content)
 			if err != nil {
 				log.Log.Error(err, "getRestoreVolumeBackup")
 				return false, err
 			}
-			if err = r.createRestorePVC(vmRestore, target, backup, &restore, content.Spec.Source.VirtualMachine.Name, content.Spec.Source.VirtualMachine.Namespace); err != nil {
+			var slavehandle string
+			for _, status := range content.Status.VolumeStatus {
+				if backup.VolumeName == status.VolumeName {
+					slavehandle = "csi-vol-" + GetVolUUId(status.SlaveVolumeHandle)
+					break
+				}
+			}
+			if slavehandle == "" {
+				return false, fmt.Errorf("SlaveVolumeHandle missing %+v", backup)
+			}
+			if err = r.createRestorePVC(vmRestore, target, backup, &restore, content.Spec.Source.VirtualMachine.Name, content.Spec.Source.VirtualMachine.Namespace, slavehandle); err != nil {
 				log.Log.Error(err, "createRestorePVC")
 				return false, err
 			}
 			createdPVC = true
 		} else if pvc.Status.Phase == corev1.ClaimPending {
+			fmt.Println("ClaimPending restores pvc = > ", pvc.Name)
 			bindingMode, err := r.getBindingMode(pvc)
 			if err != nil {
 				log.Log.Error(err, "getBindingMode")
@@ -302,6 +313,7 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 				waitingPVC = true
 			}
 		} else if pvc.Status.Phase != corev1.ClaimBound {
+			fmt.Println("ClaimBound restores pvc = > ", pvc.Name)
 			return false, fmt.Errorf("PVC %s/%s in status %q", pvc.Namespace, pvc.Name, pvc.Status.Phase)
 		}
 	}
@@ -400,7 +412,7 @@ func (r *VirtualMachineRestoreReconciler) getPVC(namespace, volumeName string) (
 	return obj.DeepCopy(), nil
 }
 
-func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacomv1.VirtualMachineRestore, target restoreTarget, volumeBackup *hitoseacomv1.VolumeBackup, volumeRestore *hitoseacomv1.VolumeRestore, sourceVmName, sourceVmNamespace string) error {
+func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacomv1.VirtualMachineRestore, target restoreTarget, volumeBackup *hitoseacomv1.VolumeBackup, volumeRestore *hitoseacomv1.VolumeRestore, sourceVmName, sourceVmNamespace, slavehandle string) error {
 	if volumeBackup == nil || volumeBackup.VolumeSnapshotName == nil {
 		r.Log.Error(errors.New(""), fmt.Sprintf("VolumeSnapshot name missing %+v", volumeBackup))
 		return fmt.Errorf("missing VolumeSnapshot name")
@@ -423,7 +435,6 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacom
 	pvc.Namespace = corev1.NamespaceDefault
 	//pvc := CreateRestorePVCDefFromVMRestore(vmRestore.Name, volumeRestore.PersistentVolumeClaimName, volumeSnapshot, volumeBackup, sourceVmName, sourceVmNamespace)
 	target.Own(pvc)
-	dump.P(pvc.Name)
 	if err := r.Client.Create(context.TODO(), pvc, &client.CreateOptions{}); err != nil {
 		log.Log.Error(err, "create pvc")
 		return err
@@ -431,20 +442,18 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacom
 
 	r.Log.Info("restore pvc created successfully", "namespace", pvc.Namespace, "name", pvc.Name)
 
-	oldPv := &corev1.PersistentVolume{}
-	if err := r.Client.Get(context.TODO(), client.ObjectKey{Namespace: volumeBackup.PersistentVolumeClaim.Namespace, Name: volumeBackup.PersistentVolumeClaim.Spec.VolumeName}, oldPv); err != nil {
-		r.Log.Error(err, "get pv")
-		return err
-	}
+	//oldPv := &corev1.PersistentVolume{}
+	//if err := r.Client.Get(context.TODO(), client.ObjectKey{Namespace: volumeBackup.PersistentVolumeClaim.Namespace, Name: volumeBackup.PersistentVolumeClaim.Spec.VolumeName}, oldPv); err != nil {
+	//	r.Log.Error(err, "get pv")
+	//	return err
+	//}
 
 	ssc, err := getCephCsiConfigForSC(r.Client, r.SlaveScName)
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("createRestorePVC ssc => ", ssc)
-
-	pv := r.CreateRestoreStaticPVDefFromVMRestore(oldPv, ssc, "0001-0024-5e709abc-419e-11ee-a132-af7f7bf3bfc0-0000000000000002-863116c1-fca9-499a-9f6d-b1185a6bb06c")
+	pv := r.CreateRestoreStaticPVDefFromVMRestore(pvc, ssc, slavehandle)
 	pv.Name = "pvc-" + string(pvc.UID)
 	if err := r.Client.Create(context.TODO(), pv, &client.CreateOptions{}); err != nil {
 		return err
@@ -461,8 +470,8 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacom
 	return nil
 }
 
-func (r *VirtualMachineRestoreReconciler) CreateRestoreStaticPVDefFromVMRestore(oldPv *corev1.PersistentVolume, ssc *config.CephCsiConfig, slaveVolumeHandle string) *corev1.PersistentVolume {
-	return CreateRestoreStaticPVDef(oldPv, ssc, slaveVolumeHandle)
+func (r *VirtualMachineRestoreReconciler) CreateRestoreStaticPVDefFromVMRestore(pvc *corev1.PersistentVolumeClaim, ssc *config.CephCsiConfig, slaveVolumeHandle string) *corev1.PersistentVolume {
+	return CreateRestoreStaticPVDef(pvc, ssc, slaveVolumeHandle)
 }
 
 func (r *VirtualMachineRestoreReconciler) getBindingMode(pvc *corev1.PersistentVolumeClaim) (*storagev1.VolumeBindingMode, error) {
@@ -524,34 +533,49 @@ func CreateRestorePVCDefFromVMRestore(vmRestoreName, restorePVCName string, volu
 	return pvc
 }
 
-func CreateRestoreStaticPVDef(pv *corev1.PersistentVolume, ssc *config.CephCsiConfig, slaveVolumeHandle string) *corev1.PersistentVolume {
+func CreateRestoreStaticPVDef(pvc *corev1.PersistentVolumeClaim, ssc *config.CephCsiConfig, slaveVolumeHandle string) *corev1.PersistentVolume {
+	options := map[string]string{
+		"clusterID":     ssc.ClusterID,
+		"pool":          ssc.Pool,
+		"imageFeatures": "layering",
+		"staticVolume":  "true",
+	}
 	newPv := &corev1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: pv.Namespace,
+			Namespace: pvc.Namespace,
 		},
 		Spec: corev1.PersistentVolumeSpec{
-			Capacity: pv.Spec.Capacity,
+			Capacity: pvc.Spec.Resources.Requests,
 			PersistentVolumeSource: corev1.PersistentVolumeSource{
-				CSI: pv.Spec.CSI,
+				//CSI: pv.Spec.CSI,
+				CSI: &corev1.CSIPersistentVolumeSource{
+					Driver:           ssc.Driver,
+					VolumeHandle:     slaveVolumeHandle,
+					ReadOnly:         false,
+					VolumeAttributes: options,
+					NodeStageSecretRef: &corev1.SecretReference{
+						Name:      ssc.NodeStageSecretName,
+						Namespace: ssc.NodeStageSecretNamespace,
+					},
+				},
 			},
 			StorageClassName:              "",
-			AccessModes:                   pv.Spec.AccessModes,
+			AccessModes:                   pvc.Spec.AccessModes,
 			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
-			MountOptions:                  pv.Spec.MountOptions,
-			VolumeMode:                    pv.Spec.VolumeMode,
+			//MountOptions:                  pvc.Spec.MountOptions,
+			VolumeMode: pvc.Spec.VolumeMode,
 		},
 	}
-	newPv.Spec.CSI.VolumeHandle = "csi-vol-544e294c-510e-4e08-b40f-7f3a09438cc3"
-	newPv.Spec.CSI.Driver = ssc.Driver
-	newPv.Spec.CSI.VolumeAttributes["clusterID"] = ssc.ClusterID
-	newPv.Spec.CSI.VolumeAttributes["staticVolume"] = "true"
-	newPv.Spec.CSI.NodeStageSecretRef.Name = ssc.NodeStageSecretName
-	newPv.Spec.CSI.NodeStageSecretRef.Namespace = ssc.NodeStageSecretNamespace
-	newPv.Spec.CSI.ControllerExpandSecretRef.Name = ssc.ControllerExpandSecretName
-	newPv.Spec.CSI.ControllerExpandSecretRef.Namespace = ssc.ControllerExpandSecretNamespace
-	delete(newPv.Spec.CSI.VolumeAttributes, "journalPool")
-	delete(newPv.Spec.CSI.VolumeAttributes, "imageName")
-	delete(newPv.Spec.CSI.VolumeAttributes, "storage.kubernetes.io/csiProvisionerIdentity")
+	//newPv.Spec.CSI.Driver = ssc.Driver
+	//newPv.Spec.CSI.VolumeAttributes["clusterID"] = ssc.ClusterID
+	//newPv.Spec.CSI.VolumeAttributes["staticVolume"] = "true"
+	//newPv.Spec.CSI.NodeStageSecretRef.Name = ssc.NodeStageSecretName
+	//newPv.Spec.CSI.NodeStageSecretRef.Namespace = ssc.NodeStageSecretNamespace
+	//newPv.Spec.CSI.ControllerExpandSecretRef.Name = ssc.ControllerExpandSecretName
+	//newPv.Spec.CSI.ControllerExpandSecretRef.Namespace = ssc.ControllerExpandSecretNamespace
+	//delete(newPv.Spec.CSI.VolumeAttributes, "journalPool")
+	//delete(newPv.Spec.CSI.VolumeAttributes, "imageName")
+	//delete(newPv.Spec.CSI.VolumeAttributes, "storage.kubernetes.io/csiProvisionerIdentity")
 	return newPv
 }
 
