@@ -94,6 +94,7 @@ type VirtualMachineSnapshotContentStatus struct {
 	Error *Error `json:"error,omitempty"`
 
 	// +optional
+	// +nullable
 	VolumeStatus []VolumeStatus `json:"volumeStatus,omitempty"`
 }
 

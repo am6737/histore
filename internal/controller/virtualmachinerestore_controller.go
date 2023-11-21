@@ -458,7 +458,7 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacom
 
 	pv := r.CreateRestoreStaticPVDefFromVMRestore(pvc, ssc, slaveVolumeHandle)
 	pv.Name = "pvc-" + string(pvc.UID)
-	if err := r.Client.Create(context.TODO(), pv, &client.CreateOptions{}); err != nil {
+	if err = r.Client.Create(context.TODO(), pv, &client.CreateOptions{}); err != nil {
 		return err
 	}
 
@@ -466,7 +466,7 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacom
 
 	pvc.Spec.VolumeName = pv.Name
 	// pvc Binding pv
-	if err := r.Client.Status().Update(context.Background(), pvc); err != nil {
+	if err = r.Client.Status().Update(context.Background(), pvc); err != nil {
 		return fmt.Errorf("failed to update PVC status: %w", err)
 	}
 

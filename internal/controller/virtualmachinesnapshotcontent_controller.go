@@ -26,10 +26,12 @@ import (
 	librbd "github.com/ceph/go-ceph/rbd"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	"github.com/gookit/goutil/dump"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	"google.golang.org/grpc/codes"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -98,22 +100,20 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
-		logger.Error(err, "无法获取 VirtualMachineSnapshot 对象")
+		logger.Error(err, "Unable to obtain VirtualMachineSnapshot object")
 		return ctrl.Result{}, err
 	}
-
-	//log.Log.V(1).Info("测试日志----------------------------1")
 
 	if vmSnapshotContentDeleting(content) {
 		SecretName := content.Annotations[prefixedSnapshotDeleteSecretNameKey]
 		SecretNamespace := content.Annotations[prefixedSnapshotDeleteSecretNamespaceKey]
 		secret, err := r.getSecret(SecretNamespace, SecretName)
 		if err != nil {
-			r.Log.Error(err, "getSecret")
+			logger.Error(err, "getSecret")
 			return reconcile.Result{RequeueAfter: 15 * time.Second}, err
 		}
 		if r.handleDeletion(content, secret) != nil {
-			r.Log.Error(err, "handleDeletion")
+			logger.Error(err, "volume deleteHandle")
 			return reconcile.Result{RequeueAfter: 15 * time.Second}, err
 		}
 		if err = r.removeFinalizerFromVmsc(content); err != nil {
@@ -122,9 +122,11 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		}
 		return reconcile.Result{}, nil
 	} else {
-		if err := r.addFinalizerToVmsc(content); err != nil {
-			logger.Error(err, "Failed to add VirtualMachineSnapshotContent finalizer")
-			return reconcile.Result{}, err
+		if !contains(content.Finalizers, vmSnapshotContentFinalizer) {
+			if err := r.addFinalizerToVmsc(content); err != nil {
+				logger.Error(err, "Failed to add VirtualMachineSnapshotContent finalizer")
+				return reconcile.Result{}, err
+			}
 		}
 	}
 
@@ -343,8 +345,8 @@ func (r *VirtualMachineSnapshotContentReconciler) handleDeletion(content *hitose
 	for _, v := range content.Status.VolumeStatus {
 		r.Log.Info("rbd deleting", "volumeHandle", v.SlaveVolumeHandle)
 		if err := r.DeleteVolumeSnapshot(context.Background(), v.SlaveVolumeHandle, secret, map[string]string{}); err != nil {
-			r.Log.Error(err, "Failed to add VirtualMachineSnapshotContent finalizer")
-			continue
+			//r.Log.Error(err, fmt.Sprintf("Failed to remove volume %s", v.SlaveVolumeHandle))
+			return fmt.Errorf(fmt.Sprintf("Failed to remove volume %s", v.SlaveVolumeHandle))
 		}
 	}
 	return nil
@@ -445,25 +447,13 @@ func (r *VirtualMachineSnapshotContentReconciler) updateVolumeStatus(content *hi
 	if newVolumeStatus.Phase != 0 {
 		content.Status.VolumeStatus[targetIndex].Phase = newVolumeStatus.Phase
 	}
-	//if !equality.Semantic.DeepEqual(content.Status.VolumeStatus[targetIndex], newVolumeStatus) {
-	//	//oldStatus.Field1 = newStatus.Field1
-	//	//oldStatus.Field2 = newStatus.Field2
-	//	content.Status.VolumeStatus[targetIndex] = newVolumeStatus
-	//}
+	if !equality.Semantic.DeepEqual(content.Status.VolumeStatus[targetIndex], newVolumeStatus) {
+		fmt.Println("updateVolumeStatus !equality.Semantic.DeepEqual")
+		dump.Println("old Status => ", content.Status.VolumeStatus[targetIndex])
+		dump.Println("new Status => ", newVolumeStatus)
+	}
 	content.Status.VolumeStatus[targetIndex].ReadyToUse = newVolumeStatus.ReadyToUse
 	return r.Status().Update(context.Background(), content)
-
-	// Compare the old and new VolumeStatus
-	//oldVolumeStatus := content.Status.VolumeStatus[targetIndex]
-	//if !reflect.DeepEqual(oldVolumeStatus, newVolumeStatus) {
-	//content.Status.VolumeStatus[targetIndex] = newVolumeStatus
-	//// Update the VirtualMachineSnapshotContent status using patch
-	//if err := r.Status().Update(context.Background(), content); err != nil {
-	//	log.Log.V(0).Error(err, "Failed to update VirtualMachineSnapshotContent status")
-	//	return err
-	//}
-	//}
-	//return nil
 }
 
 func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Context, masterVolumeHandle string,
