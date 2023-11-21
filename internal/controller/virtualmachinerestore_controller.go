@@ -246,8 +246,6 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 			continue
 		}
 
-		//fmt.Println("vb.VolumeName 2 => ", vb.PersistentVolumeClaim.Name)
-
 		found := false
 		for _, vr := range vmRestore.Status.Restores {
 			if vb.VolumeName == vr.VolumeName {
@@ -426,7 +424,8 @@ func (r *VirtualMachineRestoreReconciler) getPVC(namespace, volumeName string) (
 	return obj.DeepCopy(), nil
 }
 
-func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacomv1.VirtualMachineRestore,
+func (r *VirtualMachineRestoreReconciler) createRestorePVC(
+	vmRestore *hitoseacomv1.VirtualMachineRestore,
 	target restoreTarget,
 	volumeBackup *hitoseacomv1.VolumeBackup,
 	volumeRestore *hitoseacomv1.VolumeRestore,
@@ -440,20 +439,20 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacom
 		return fmt.Errorf("missing vmRestore")
 	}
 
-	//volumeSnapshot := &vsv1.VolumeSnapshot{}
-	//if err := r.Client.Get(context.Background(), client.ObjectKey{Namespace: vmRestore.Namespace, Name: *volumeBackup.MasterVolumeHandle}, volumeSnapshot); err != nil {
-	//	return err
-	//}
+	vmSnapshot := &hitoseacomv1.VirtualMachineSnapshot{}
+	if err := r.Client.Get(context.Background(), client.ObjectKey{
+		Namespace: vmRestore.Namespace,
+		Name:      *volumeBackup.VolumeSnapshotName,
+	}, vmSnapshot); err != nil {
+		return err
+	}
 
 	if volumeRestore == nil {
 		return fmt.Errorf("missing volumeRestore")
 	}
 
-	fmt.Println("config.DC.SlaveStorageClass => ", config.DC.SlaveStorageClass)
-
 	pvc := CreateRestoreStaticPVCDefFromVMRestore(vmRestore.Name, config.DC.SlaveStorageClass, volumeRestore.PersistentVolumeClaimName, volumeBackup, sourceVmName, sourceVmNamespace)
 	pvc.Namespace = corev1.NamespaceDefault
-	//pvc := CreateRestorePVCDefFromVMRestore(vmRestore.Name, volumeRestore.PersistentVolumeClaimName, volumeSnapshot, volumeBackup, sourceVmName, sourceVmNamespace)
 	target.Own(pvc)
 	if err := r.Client.Create(context.TODO(), pvc, &client.CreateOptions{}); err != nil {
 		log.Log.Error(err, "create pvc")
@@ -462,18 +461,12 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacom
 
 	r.Log.Info("restore pvc created successfully", "namespace", pvc.Namespace, "name", pvc.Name)
 
-	//oldPv := &corev1.PersistentVolume{}
-	//if err := r.Client.Get(context.TODO(), client.ObjectKey{Namespace: volumeBackup.PersistentVolumeClaim.Namespace, Name: volumeBackup.PersistentVolumeClaim.Spec.VolumeName}, oldPv); err != nil {
-	//	r.Log.Error(err, "get pv")
-	//	return err
-	//}
-
 	ssc, err := getCephCsiConfigForSC(r.Client, config.DC.SlaveStorageClass)
 	if err != nil {
 		return err
 	}
 
-	pv := r.CreateRestoreStaticPVDefFromVMRestore(pvc, ssc, slaveVolumeHandle)
+	pv := r.CreateRestoreStaticPVDefFromVMRestore(pvc, ssc, slaveVolumeHandle, corev1.PersistentVolumeReclaimPolicy(*vmSnapshot.Spec.DeletionPolicy))
 	pv.Name = "pvc-" + string(pvc.UID)
 	if err = r.Client.Create(context.TODO(), pv, &client.CreateOptions{}); err != nil {
 		return err
@@ -490,8 +483,8 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacom
 	return nil
 }
 
-func (r *VirtualMachineRestoreReconciler) CreateRestoreStaticPVDefFromVMRestore(pvc *corev1.PersistentVolumeClaim, ssc *config.CephCsiConfig, slaveVolumeHandle string) *corev1.PersistentVolume {
-	return CreateRestoreStaticPVDef(pvc, ssc, slaveVolumeHandle)
+func (r *VirtualMachineRestoreReconciler) CreateRestoreStaticPVDefFromVMRestore(pvc *corev1.PersistentVolumeClaim, ssc *config.CephCsiConfig, slaveVolumeHandle string, deletionPolicy corev1.PersistentVolumeReclaimPolicy) *corev1.PersistentVolume {
+	return CreateRestoreStaticPVDef(pvc, ssc, slaveVolumeHandle, deletionPolicy)
 }
 
 func (r *VirtualMachineRestoreReconciler) getBindingMode(pvc *corev1.PersistentVolumeClaim) (*storagev1.VolumeBindingMode, error) {
@@ -520,6 +513,21 @@ func (r *VirtualMachineRestoreReconciler) getDV(namespace string, name string) (
 		return nil, err
 	}
 	return dv.DeepCopy(), nil
+}
+
+func (r *VirtualMachineRestoreReconciler) getSnapshot(content *hitoseacomv1.VirtualMachineSnapshotContent) (*hitoseacomv1.VirtualMachineSnapshot, error) {
+	for _, ref := range content.OwnerReferences {
+		if ref.Kind == "VirtualMachineSnapshot" {
+			obj := &hitoseacomv1.VirtualMachineSnapshot{}
+			if err := r.Client.Get(context.TODO(), client.ObjectKey{Namespace: content.Namespace, Name: ref.Name}, obj); err != nil {
+				if apierrors.IsNotFound(err) {
+					return nil, nil
+				}
+			}
+			return obj.DeepCopy(), nil
+		}
+	}
+	return nil, nil
 }
 
 func CreateRestoreStaticPVCDefFromVMRestore(vmRestoreName, storageClassName, restorePVCName string, volumeBackup *hitoseacomv1.VolumeBackup, sourceVmName, sourceVmNamespace string) *corev1.PersistentVolumeClaim {
@@ -553,7 +561,7 @@ func CreateRestorePVCDefFromVMRestore(vmRestoreName, restorePVCName string, volu
 	return pvc
 }
 
-func CreateRestoreStaticPVDef(pvc *corev1.PersistentVolumeClaim, ssc *config.CephCsiConfig, slaveVolumeHandle string) *corev1.PersistentVolume {
+func CreateRestoreStaticPVDef(pvc *corev1.PersistentVolumeClaim, ssc *config.CephCsiConfig, slaveVolumeHandle string, deletionPolicy corev1.PersistentVolumeReclaimPolicy) *corev1.PersistentVolume {
 	options := map[string]string{
 		"clusterID":     ssc.ClusterID,
 		"imageFeatures": "layering",
@@ -585,7 +593,7 @@ func CreateRestoreStaticPVDef(pvc *corev1.PersistentVolumeClaim, ssc *config.Cep
 			},
 			StorageClassName:              config.DC.SlaveStorageClass,
 			AccessModes:                   pvc.Spec.AccessModes,
-			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
+			PersistentVolumeReclaimPolicy: deletionPolicy,
 			//MountOptions:                  pvc.Spec.MountOptions,
 			VolumeMode: pvc.Spec.VolumeMode,
 		},
@@ -596,7 +604,6 @@ func CreateRestoreStaticPVDef(pvc *corev1.PersistentVolumeClaim, ssc *config.Cep
 func CreateRestoreStaticPVCDef(restorePVCName, storageClassName string, volumeBackup *hitoseacomv1.VolumeBackup) *corev1.PersistentVolumeClaim {
 	sourcePVC := volumeBackup.PersistentVolumeClaim.DeepCopy()
 	newPvc := &corev1.PersistentVolumeClaim{
-		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        restorePVCName,
 			Labels:      sourcePVC.Labels,

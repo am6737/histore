@@ -214,14 +214,15 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 			continue
 		}
 
-		volumeSnapshotName := fmt.Sprintf("vmsnapshot-%s-volume-%s", vmSnapshot.UID, pvcName)
+		//volumeSnapshotName := fmt.Sprintf("vmsnapshot-%s-volume-%s", vmSnapshot.UID, pvcName)
 		vb := hitoseacomv1.VolumeBackup{
 			VolumeName: volumeName,
 			PersistentVolumeClaim: hitoseacomv1.PersistentVolumeClaim{
 				ObjectMeta: *getSimplifiedMetaObject(pvc.ObjectMeta),
 				Spec:       *pvc.Spec.DeepCopy(),
 			},
-			VolumeSnapshotName: &volumeSnapshotName,
+			//VolumeSnapshotName: &volumeSnapshotName,
+			VolumeSnapshotName: &vmSnapshot.Name,
 		}
 
 		volumeBackups = append(volumeBackups, vb)
