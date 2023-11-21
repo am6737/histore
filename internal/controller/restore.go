@@ -46,8 +46,6 @@ type vmRestoreTarget struct {
 	controller *VirtualMachineRestoreReconciler
 	vmRestore  *hitoseacomv1.VirtualMachineRestore
 	vm         *kubevirtv1.VirtualMachine
-	oldPvc     *corev1.PersistentVolumeClaim
-	oldPv      *corev1.PersistentVolume
 }
 
 func (r *VirtualMachineRestoreReconciler) getTarget(vmRestore *hitoseacomv1.VirtualMachineRestore) (restoreTarget, error) {
@@ -86,21 +84,20 @@ func (r *VirtualMachineRestoreReconciler) getVM(namespace, name string) (*kubevi
 
 func (t *vmRestoreTarget) Ready() (bool, error) {
 	if !t.doesTargetVMExist() {
-		fmt.Println("Ready 1")
 		return true, nil
 	}
 
-	//rs, err := t.vm.RunStrategy()
-	//if err != nil {
-	//	return false, err
-	//}
+	rs, err := t.vm.RunStrategy()
+	if err != nil {
+		return false, err
+	}
 
-	//if rs != kubevirtv1.RunStrategyHalted {
-	//	return false, fmt.Errorf("invalid RunStrategy %q", rs)
-	//}
+	if rs != kubevirtv1.RunStrategyHalted {
+		return false, fmt.Errorf("invalid RunStrategy %q", rs)
+	}
 
 	vmi := &kubevirtv1.VirtualMachineInstance{}
-	if err := t.controller.Get(context.Background(), client.ObjectKey{Namespace: t.vm.Namespace, Name: t.vm.Name}, vmi); err != nil {
+	if err = t.controller.Get(context.Background(), client.ObjectKey{Namespace: t.vm.Namespace, Name: t.vm.Name}, vmi); err != nil {
 		if apierrors.IsNotFound(err) {
 			return true, nil
 		}
@@ -145,12 +142,10 @@ func (t *vmRestoreTarget) Cleanup() error {
 		dv := &cdiv1.DataVolume{}
 		if err = t.controller.Client.Get(context.Background(), types.NamespacedName{Namespace: t.vmRestore.Namespace, Name: dvName}, dv); err != nil {
 			if apierrors.IsNotFound(err) {
-				fmt.Println("dv 不存在 => ", dvName)
 				return nil
 			}
 			return err
 		}
-		fmt.Println("要删除的dv => ", dvName)
 		if err = t.controller.Client.Delete(context.Background(), dv); err != nil {
 			return err
 		}
@@ -389,8 +384,6 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 	newVM.Spec.DataVolumeTemplates = newTemplates
 	newVM.Spec.Template.Spec.Volumes = newVolumes
 
-	fmt.Println("setLastRestoreAnnotation => ", getRestoreAnnotationValue(t.vmRestore))
-
 	setLastRestoreAnnotation(t.vmRestore, newVM)
 
 	//dump.Println("newVM.Spec.DataVolumeTemplates => ", newVM.Spec.DataVolumeTemplates)
@@ -402,7 +395,6 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 	//}
 
 	if !t.doesTargetVMExist() {
-		fmt.Println("create newVM => ", newVM.Name)
 		if err = t.controller.Client.Create(context.TODO(), newVM); err != nil {
 			return false, err
 		}
@@ -431,12 +423,10 @@ func (t *vmRestoreTarget) createDataVolume(dvt kubevirtv1.DataVolumeTemplateSpec
 		return false, nil
 	}
 
-	fmt.Println("createDataVolume 1")
 	newDataVolume, err := CreateDataVolumeManifest(t.controller.Client, dvt, t.vm)
 	if err != nil {
 		return false, fmt.Errorf("Unable to create restore DataVolume manifest: %v", err)
 	}
-	fmt.Println("createDataVolume 2")
 	if newDataVolume.Annotations == nil {
 		newDataVolume.Annotations = make(map[string]string)
 	}
@@ -445,8 +435,6 @@ func (t *vmRestoreTarget) createDataVolume(dvt kubevirtv1.DataVolumeTemplateSpec
 	newDataVolume.Spec.Storage.StorageClassName = &config.DC.SlaveStorageClass
 
 	//dump.Println("newDataVolume => ", newDataVolume)
-
-	fmt.Println("t.createDataVolume(dvt)")
 
 	if err = t.controller.Client.Create(context.Background(), newDataVolume); err != nil {
 		return false, fmt.Errorf("failed to create restore DataVolume: %v", err)

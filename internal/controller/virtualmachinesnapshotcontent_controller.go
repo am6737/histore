@@ -571,7 +571,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 	defer slaveCr.DeleteCredentials()
 
 	EnabledImageHandler := func(rbdVol *rbd.RbdVolume) error {
-		r.Log.Info("Wait master RBD image enable", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+		//r.Log.Info("Wait master RBD image enable  ", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.EnableImageMirroring(librbd.ImageMirrorModeSnapshot); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
@@ -608,7 +608,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 				Phase:      hitoseacomv1.VolumePromote,
 			})
 		}
-		r.Log.Info("Wait master RBD image demote", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+		//r.Log.Info("Wait master RBD image demote  ", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.DemoteImage(); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
@@ -645,7 +645,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 				Phase:      hitoseacomv1.DisableReplication,
 			})
 		}
-		r.Log.Info("Wait slave RBD image promote", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+		//r.Log.Info("Wait slave RBD image promote  ", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.PromoteImage(false); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
@@ -666,7 +666,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 	}
 
 	DisableImageHandler := func(rbdVol *rbd.RbdVolume) error {
-		r.Log.Info("Wait slave RBD image disable", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+		//r.Log.Info("Wait slave RBD image disable  ", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.DisableImageMirroring(false); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
@@ -787,7 +787,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 				r.Log.Error(err, "failed to get slave rbd")
 				return false, nil
 			}
-			r.Log.Info(fmt.Sprintf("slave source Volume ID %s success", slaveVolumeHandle))
+			//r.Log.Info(fmt.Sprintf("slave source Volume ID %s success", slaveVolumeHandle))
 			return true, nil
 		}); err != nil {
 			return false, err
