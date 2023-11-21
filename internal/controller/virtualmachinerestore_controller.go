@@ -286,17 +286,18 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 				log.Log.Error(err, "getRestoreVolumeBackup")
 				return false, err
 			}
-			var slavehandle string
+			var slaveVolumeHandle string
 			for _, status := range content.Status.VolumeStatus {
 				if backup.VolumeName == status.VolumeName {
-					slavehandle = "csi-vol-" + GetVolUUId(status.SlaveVolumeHandle)
+					slaveVolumeHandle = status.SlaveVolumeHandle
 					break
 				}
 			}
-			if slavehandle == "" {
+			if slaveVolumeHandle == "" {
 				return false, fmt.Errorf("SlaveVolumeHandle missing %+v", backup)
 			}
-			if err = r.createRestorePVC(vmRestore, target, backup, &restore, content.Spec.Source.VirtualMachine.Name, content.Spec.Source.VirtualMachine.Namespace, slavehandle); err != nil {
+
+			if err = r.createRestorePVC(vmRestore, target, backup, &restore, content.Spec.Source.VirtualMachine.Name, content.Spec.Source.VirtualMachine.Namespace, slaveVolumeHandle); err != nil {
 				log.Log.Error(err, "createRestorePVC")
 				return false, err
 			}
@@ -412,7 +413,11 @@ func (r *VirtualMachineRestoreReconciler) getPVC(namespace, volumeName string) (
 	return obj.DeepCopy(), nil
 }
 
-func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacomv1.VirtualMachineRestore, target restoreTarget, volumeBackup *hitoseacomv1.VolumeBackup, volumeRestore *hitoseacomv1.VolumeRestore, sourceVmName, sourceVmNamespace, slavehandle string) error {
+func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacomv1.VirtualMachineRestore,
+	target restoreTarget,
+	volumeBackup *hitoseacomv1.VolumeBackup,
+	volumeRestore *hitoseacomv1.VolumeRestore,
+	sourceVmName, sourceVmNamespace, slaveVolumeHandle string) error {
 	if volumeBackup == nil || volumeBackup.VolumeSnapshotName == nil {
 		r.Log.Error(errors.New(""), fmt.Sprintf("VolumeSnapshot name missing %+v", volumeBackup))
 		return fmt.Errorf("missing VolumeSnapshot name")
@@ -453,7 +458,7 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacom
 		return err
 	}
 
-	pv := r.CreateRestoreStaticPVDefFromVMRestore(pvc, ssc, slavehandle)
+	pv := r.CreateRestoreStaticPVDefFromVMRestore(pvc, ssc, slaveVolumeHandle)
 	pv.Name = "pvc-" + string(pvc.UID)
 	if err := r.Client.Create(context.TODO(), pv, &client.CreateOptions{}); err != nil {
 		return err
@@ -536,9 +541,10 @@ func CreateRestorePVCDefFromVMRestore(vmRestoreName, restorePVCName string, volu
 func CreateRestoreStaticPVDef(pvc *corev1.PersistentVolumeClaim, ssc *config.CephCsiConfig, slaveVolumeHandle string) *corev1.PersistentVolume {
 	options := map[string]string{
 		"clusterID":     ssc.ClusterID,
-		"pool":          ssc.Pool,
 		"imageFeatures": "layering",
-		"staticVolume":  "true",
+		"imageName":     "csi-vol-" + GetVolUUId(slaveVolumeHandle),
+		"journalPool":   ssc.Pool,
+		"pool":          ssc.Pool,
 	}
 	newPv := &corev1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -547,7 +553,6 @@ func CreateRestoreStaticPVDef(pvc *corev1.PersistentVolumeClaim, ssc *config.Cep
 		Spec: corev1.PersistentVolumeSpec{
 			Capacity: pvc.Spec.Resources.Requests,
 			PersistentVolumeSource: corev1.PersistentVolumeSource{
-				//CSI: pv.Spec.CSI,
 				CSI: &corev1.CSIPersistentVolumeSource{
 					Driver:           ssc.Driver,
 					VolumeHandle:     slaveVolumeHandle,
@@ -557,25 +562,19 @@ func CreateRestoreStaticPVDef(pvc *corev1.PersistentVolumeClaim, ssc *config.Cep
 						Name:      ssc.NodeStageSecretName,
 						Namespace: ssc.NodeStageSecretNamespace,
 					},
+					ControllerExpandSecretRef: &corev1.SecretReference{
+						Name:      ssc.ControllerExpandSecretName,
+						Namespace: ssc.ControllerExpandSecretNamespace,
+					},
 				},
 			},
-			StorageClassName:              "",
+			StorageClassName:              config.DC.SlaveStorageClass,
 			AccessModes:                   pvc.Spec.AccessModes,
 			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
 			//MountOptions:                  pvc.Spec.MountOptions,
 			VolumeMode: pvc.Spec.VolumeMode,
 		},
 	}
-	//newPv.Spec.CSI.Driver = ssc.Driver
-	//newPv.Spec.CSI.VolumeAttributes["clusterID"] = ssc.ClusterID
-	//newPv.Spec.CSI.VolumeAttributes["staticVolume"] = "true"
-	//newPv.Spec.CSI.NodeStageSecretRef.Name = ssc.NodeStageSecretName
-	//newPv.Spec.CSI.NodeStageSecretRef.Namespace = ssc.NodeStageSecretNamespace
-	//newPv.Spec.CSI.ControllerExpandSecretRef.Name = ssc.ControllerExpandSecretName
-	//newPv.Spec.CSI.ControllerExpandSecretRef.Namespace = ssc.ControllerExpandSecretNamespace
-	//delete(newPv.Spec.CSI.VolumeAttributes, "journalPool")
-	//delete(newPv.Spec.CSI.VolumeAttributes, "imageName")
-	//delete(newPv.Spec.CSI.VolumeAttributes, "storage.kubernetes.io/csiProvisionerIdentity")
 	return newPv
 }
 

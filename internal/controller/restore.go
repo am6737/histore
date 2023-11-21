@@ -402,10 +402,10 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 	newVM.Spec.Template.Spec.Volumes = newVolumes
 	setLastRestoreAnnotation(t.vmRestore, newVM)
 
-	fmt.Println("newVM ann => ", newVM.Annotations)
+	dump.Println("newVM ann => ", newVM.Annotations)
 
-	fmt.Println("newVM.Spec.DataVolumeTemplates => ", newVM.Spec.DataVolumeTemplates)
-	fmt.Println("newVM.Spec.Template.Spec.Volumes => ", newVM.Spec.Template.Spec.Volumes)
+	dump.Println("newVM.Spec.DataVolumeTemplates => ", newVM.Spec.DataVolumeTemplates)
+	dump.Println("newVM.Spec.Template.Spec.Volumes => ", newVM.Spec.Template.Spec.Volumes)
 	//
 	//newVM, err = patchVM(newVM, t.vmRestore.Spec.Patches)
 	//if err != nil {
@@ -415,7 +415,6 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 	if !t.doesTargetVMExist() {
 		//newVM, err = t.controller.Client.VirtualMachine(t.vmRestore.Namespace).Create(newVM)
 	} else {
-		fmt.Println("update vm 1112")
 		if err = t.controller.Client.Update(context.TODO(), newVM); err != nil {
 			return false, err
 		}

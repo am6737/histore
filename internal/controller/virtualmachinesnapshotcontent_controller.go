@@ -135,7 +135,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		content.Status = &hitoseacomv1.VirtualMachineSnapshotContentStatus{
 			ReadyToUse:   &f,
 			CreationTime: currentTime(),
-			VolumeStatus: []hitoseacomv1.VolumeStatus{},
+			VolumeStatus: nil,
 			Error:        nil,
 		}
 		for _, v := range content.Spec.VolumeBackups {
@@ -214,6 +214,10 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		if err := r.Get(ctx, req.NamespacedName, newContent); err != nil {
 			return err
 		}
+		if content.Status == nil {
+			return nil
+		}
+
 		complete := 0
 		for _, vStatus := range newContent.Status.VolumeStatus {
 			if vStatus.ReadyToUse {
@@ -693,7 +697,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 		rbdSnap.SourceVolumeID = masterVolumeHandle
 		rbdSnap.RbdSnapName = "csi-vol-" + cloneRbdName
 
-		log.Log.Info(fmt.Sprintf("Attempting to create VolumeSnapshot %s", *volumeBackup.VolumeSnapshotName))
+		log.Log.Info(fmt.Sprintf("Attempting to create RBD %s", rbdSnap.RbdSnapName))
 
 		_, err = rbd.CreateRBDVolumeFromSnapshot(ctx, masterRbd, rbdSnap, masterCr)
 		if err != nil {
