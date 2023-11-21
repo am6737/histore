@@ -39,9 +39,7 @@ import (
 	"regexp"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"strings"
 	"time"
@@ -103,18 +101,18 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 	}
 
 	if vmSnapshotContentDeleting(content) {
-		SecretName := content.Annotations[prefixedSnapshotDeleteSecretNameKey]
-		SecretNamespace := content.Annotations[prefixedSnapshotDeleteSecretNamespaceKey]
-		secret, err := r.getSecret(SecretNamespace, SecretName)
-		if err != nil {
-			logger.Error(err, "getSecret")
-			return reconcile.Result{RequeueAfter: 15 * time.Second}, err
-		}
-		if r.volumeDeleteHandler(content, secret) != nil {
+		//SecretName := content.Annotations[prefixedSnapshotDeleteSecretNameKey]
+		//SecretNamespace := content.Annotations[prefixedSnapshotDeleteSecretNamespaceKey]
+		//secret, err := r.getSecret(SecretNamespace, SecretName)
+		//if err != nil {
+		//	logger.Error(err, "getSecret")
+		//	return reconcile.Result{RequeueAfter: 15 * time.Second}, err
+		//}
+		if err := r.volumeDeleteHandler(content); err != nil {
 			logger.Error(err, "volume deleteHandle")
 			return reconcile.Result{RequeueAfter: 15 * time.Second}, err
 		}
-		if err = r.removeFinalizerFromVmsc(content); err != nil {
+		if err := r.removeFinalizerFromVmsc(content); err != nil {
 			logger.Error(err, "Failed to remove VirtualMachineSnapshotContent finalizer")
 			return reconcile.Result{RequeueAfter: 15 * time.Second}, err
 		}
@@ -303,48 +301,78 @@ var currentTime = func() *metav1.Time {
 // SetupWithManager sets up the controller with the Manager.
 func (r *VirtualMachineSnapshotContentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		WithEventFilter(predicate.Funcs{
-			DeleteFunc: r.deleteVolumeHandler,
-		}).
+		//WithEventFilter(predicate.Funcs{
+		//	DeleteFunc: r.deleteVolumeHandler,
+		//}).
 		For(&hitoseacomv1.VirtualMachineSnapshotContent{}).
 		//Owns(&hitoseacomv1.VirtualMachineSnapshot{}).
 		Complete(r)
 }
 
-func (r *VirtualMachineSnapshotContentReconciler) deleteVolumeHandler(e event.DeleteEvent) bool {
-	vmSnapshot, ok := e.Object.(*hitoseacomv1.VirtualMachineSnapshot)
-	if !ok {
-		return false
-	}
-	content := &hitoseacomv1.VirtualMachineSnapshotContent{}
-	if err := r.Client.Get(context.TODO(), client.ObjectKey{Namespace: vmSnapshot.Namespace, Name: *vmSnapshot.Status.VirtualMachineSnapshotContentName}, content); err != nil {
-		r.Log.Error(err, "get VirtualMachineSnapshotContent")
-		return false
-	}
-	//dump.Println("deleteVolumeHandler vmSnapshot => ", vmSnapshot.Status)
-	SecretName := content.Annotations[prefixedSnapshotDeleteSecretNameKey]
-	SecretNamespace := content.Annotations[prefixedSnapshotDeleteSecretNamespaceKey]
-	// check if the object is being deleted
+//func (r *VirtualMachineSnapshotContentReconciler) deleteVolumeHandler(e event.DeleteEvent) bool {
+//	vmSnapshot, ok := e.Object.(*hitoseacomv1.VirtualMachineSnapshot)
+//	if !ok {
+//		return false
+//	}
+//	content := &hitoseacomv1.VirtualMachineSnapshotContent{}
+//	if err := r.Client.Get(context.TODO(), client.ObjectKey{Namespace: vmSnapshot.Namespace, Name: *vmSnapshot.Status.VirtualMachineSnapshotContentName}, content); err != nil {
+//		r.Log.Error(err, "get VirtualMachineSnapshotContent")
+//		return false
+//	}
+//	//dump.Println("deleteVolumeHandler vmSnapshot => ", vmSnapshot.Status)
+//	SecretName := content.Annotations[prefixedSnapshotDeleteSecretNameKey]
+//	SecretNamespace := content.Annotations[prefixedSnapshotDeleteSecretNamespaceKey]
+//	// check if the object is being deleted
+//
+//	secret, err := r.getSecret(SecretNamespace, SecretName)
+//	if err != nil {
+//		r.Log.Error(err, "getSecret")
+//		return false
+//	}
+//	if r.volumeDeleteHandler(content, secret) != nil {
+//		r.Log.Error(err, "volumeDeleteHandler")
+//		return false
+//	}
+//
+//	return true
+//}
 
-	secret, err := r.getSecret(SecretNamespace, SecretName)
+func (r *VirtualMachineSnapshotContentReconciler) volumeDeleteHandler(content *hitoseacomv1.VirtualMachineSnapshotContent) error {
+
+	msc, err := getCephCsiConfigForSC(r.Client, config.DC.MasterStorageClass)
+	if err != nil {
+		r.Log.Error(err, "getCephCsiConfigForSC")
+		return err
+	}
+
+	masterSecret, err := r.getSecret(msc.NodeStageSecretNamespace, msc.NodeStageSecretName)
 	if err != nil {
 		r.Log.Error(err, "getSecret")
-		return false
-	}
-	if r.volumeDeleteHandler(content, secret) != nil {
-		r.Log.Error(err, "volumeDeleteHandler")
-		return false
+		return err
 	}
 
-	return true
-}
+	slaveSecret, err := r.getSecretMapForSC(config.DC.SlaveStorageClass)
+	if err != nil {
+		return err
+	}
 
-func (r *VirtualMachineSnapshotContentReconciler) volumeDeleteHandler(content *hitoseacomv1.VirtualMachineSnapshotContent, secret map[string]string) error {
 	for _, v := range content.Status.VolumeStatus {
 		r.Log.Info("volume deleting", "volumeHandle", v.SlaveVolumeHandle)
-		if err := r.DeleteVolumeSnapshot(context.Background(), v.SlaveVolumeHandle, secret, map[string]string{}); err != nil {
-			return fmt.Errorf(fmt.Sprintf("Failed to remove volume %s", v.SlaveVolumeHandle))
+		if !v.ReadyToUse {
+			masterVolumeHandle := r.getSlaveVolumeHandle(v.SlaveVolumeHandle, msc.ClusterID)
+			if err := r.DeleteVolumeSnapshot(context.Background(), masterVolumeHandle, masterSecret, map[string]string{}); err != nil {
+				if errors.Is(err, librbd.ErrNotFound) {
+					r.Log.Info(fmt.Sprintf("master source Volume ID %s not found", masterVolumeHandle))
+					return nil
+				}
+				return fmt.Errorf(fmt.Sprintf("Failed to remove volume %s", v.SlaveVolumeHandle))
+			}
+		} else {
+			if err := r.DeleteVolumeSnapshot(context.Background(), v.SlaveVolumeHandle, slaveSecret, map[string]string{}); err != nil {
+				return fmt.Errorf(fmt.Sprintf("Failed to remove volume %s", v.SlaveVolumeHandle))
+			}
 		}
+
 	}
 	return nil
 }
@@ -451,6 +479,22 @@ func (r *VirtualMachineSnapshotContentReconciler) updateVolumeStatus(content *hi
 	}
 	content.Status.VolumeStatus[targetIndex].ReadyToUse = newVolumeStatus.ReadyToUse
 	return r.Status().Update(context.Background(), content)
+}
+
+func (r *VirtualMachineSnapshotContentReconciler) getSecretMapForSC(storageClass string) (map[string]string, error) {
+	msc, err := getCephCsiConfigForSC(r.Client, storageClass)
+	if err != nil {
+		r.Log.Error(err, "getCephCsiConfigForSC")
+		return nil, err
+	}
+
+	secret, err := r.getSecret(msc.NodeStageSecretNamespace, msc.NodeStageSecretName)
+	if err != nil {
+		r.Log.Error(err, "getSecret")
+		return nil, err
+	}
+
+	return secret, nil
 }
 
 func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Context, masterVolumeHandle string,

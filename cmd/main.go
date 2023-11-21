@@ -88,7 +88,6 @@ func main() {
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
-	config.SetGlobals(cfg)
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -114,6 +113,11 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	if err = config.SetGlobals(mgr.GetClient(), cfg); err != nil {
+		setupLog.Error(err, "unable to setGlobals")
 		os.Exit(1)
 	}
 
