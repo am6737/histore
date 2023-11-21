@@ -498,7 +498,13 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(
 }
 
 func (r *VirtualMachineRestoreReconciler) CreateRestoreStaticPVDefFromVMRestore(pvc *corev1.PersistentVolumeClaim, ssc *config.CephCsiConfig, slaveVolumeHandle string, deletionPolicy corev1.PersistentVolumeReclaimPolicy) *corev1.PersistentVolume {
-	return CreateRestoreStaticPVDef(pvc, ssc, slaveVolumeHandle, deletionPolicy)
+	pv := CreateRestoreStaticPVDef(pvc, ssc, slaveVolumeHandle, deletionPolicy)
+	if pv.Annotations == nil {
+		pv.Annotations = make(map[string]string)
+	}
+	pvc.Annotations["volume.kubernetes.io/provisioner-deletion-secret-name"] = ssc.NodeStageSecretName
+	pvc.Annotations["volume.kubernetes.io/provisioner-deletion-secret-namespace"] = ssc.NodeStageSecretNamespace
+	return pv
 }
 
 func (r *VirtualMachineRestoreReconciler) getBindingMode(pvc *corev1.PersistentVolumeClaim) (*storagev1.VolumeBindingMode, error) {

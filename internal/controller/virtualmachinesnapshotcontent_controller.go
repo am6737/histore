@@ -360,7 +360,7 @@ func (r *VirtualMachineSnapshotContentReconciler) volumeDeleteHandler(content *h
 		r.Log.Info("volume deleting", "volumeHandle", v.SlaveVolumeHandle)
 		if !v.ReadyToUse {
 			masterVolumeHandle := r.getSlaveVolumeHandle(v.SlaveVolumeHandle, msc.ClusterID)
-			if err := r.DeleteVolumeSnapshot(context.Background(), masterVolumeHandle, masterSecret, map[string]string{}); err != nil {
+			if err = r.DeleteVolumeSnapshot(context.Background(), masterVolumeHandle, masterSecret, map[string]string{}); err != nil {
 				if errors.Is(err, librbd.ErrNotFound) {
 					r.Log.Info(fmt.Sprintf("master source Volume ID %s not found", masterVolumeHandle))
 					return nil
@@ -368,7 +368,11 @@ func (r *VirtualMachineSnapshotContentReconciler) volumeDeleteHandler(content *h
 				return fmt.Errorf(fmt.Sprintf("Failed to remove volume %s", v.SlaveVolumeHandle))
 			}
 		} else {
-			if err := r.DeleteVolumeSnapshot(context.Background(), v.SlaveVolumeHandle, slaveSecret, map[string]string{}); err != nil {
+			if err = r.DeleteVolumeSnapshot(context.Background(), v.SlaveVolumeHandle, slaveSecret, map[string]string{}); err != nil {
+				if errors.Is(err, librbd.ErrNotFound) {
+					r.Log.Info(fmt.Sprintf("master source Volume ID %s not found", v.SlaveVolumeHandle))
+					return nil
+				}
 				return fmt.Errorf(fmt.Sprintf("Failed to remove volume %s", v.SlaveVolumeHandle))
 			}
 		}
