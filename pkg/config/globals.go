@@ -18,8 +18,9 @@ func SetGlobals(client client.Client, cfg *CephConfig) error {
 	//}
 	//DC.SlaveCephCsiCfg = NewCephCsiConfig(ssc)
 
-	DC.MasterStorageClass = cfg.MasterStorageClass
-	DC.SlaveStorageClass = cfg.SlaveStorageClass
+	DC = cfg
+	//DC.MasterStorageClass = cfg.MasterStorageClass
+	//DC.SlaveStorageClass = cfg.SlaveStorageClass
 
 	return nil
 }

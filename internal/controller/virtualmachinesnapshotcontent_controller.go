@@ -571,6 +571,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 	defer slaveCr.DeleteCredentials()
 
 	EnabledImageHandler := func(rbdVol *rbd.RbdVolume) error {
+		r.Log.Info("Wait master RBD image enable", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.EnableImageMirroring(librbd.ImageMirrorModeSnapshot); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
@@ -579,7 +580,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 				r.Log.Error(err, "demote master rbd failed")
 				return false, err
 			}
-			r.Log.Info("enable master rbd success", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+			r.Log.Info("Master RBD image enabled successfully", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			if err == wait.ErrWaitTimeout {
@@ -607,7 +608,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 				Phase:      hitoseacomv1.VolumePromote,
 			})
 		}
-		r.Log.Info("wait demote master rbd   ", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+		r.Log.Info("Wait master RBD image demote", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.DemoteImage(); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
@@ -616,7 +617,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 				r.Log.Error(err, "demote master rbd failed")
 				return false, err
 			}
-			r.Log.Info("demote master rbd success", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+			r.Log.Info("Master RBD image demote successfully", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			if err == wait.ErrWaitTimeout {
@@ -644,7 +645,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 				Phase:      hitoseacomv1.DisableReplication,
 			})
 		}
-		r.Log.Info("wait promote slave rbd   ", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+		r.Log.Info("Wait slave RBD image promote", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.PromoteImage(false); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
@@ -653,7 +654,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 				r.Log.Error(err, "promote slave rbd failed")
 				return false, err
 			}
-			r.Log.Info("promote slave rbd success", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+			r.Log.Info("Slave RBD image promote successfully", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			return err
@@ -665,7 +666,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 	}
 
 	DisableImageHandler := func(rbdVol *rbd.RbdVolume) error {
-		r.Log.Info("wait disable slave rbd image", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+		r.Log.Info("Wait slave RBD image disable", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.DisableImageMirroring(false); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
@@ -674,7 +675,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 				}
 				r.Log.Error(err, "disable slave rbd image failed")
 			}
-			r.Log.Info("disable slave rbd image success", "volumeHandle", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+			r.Log.Info("Slave RBD image disable successfully", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			return err

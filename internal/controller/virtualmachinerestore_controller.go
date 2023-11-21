@@ -146,7 +146,7 @@ func (r *VirtualMachineRestoreReconciler) Reconcile(ctx context.Context, req ctr
 	updated, err := r.reconcileVolumeRestores(vmRestoreOut, target)
 	if err != nil {
 		r.Log.Error(err, "Error reconciling VolumeRestores")
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
 	}
 	if updated {
 		//r.Log.Info("reconcileVolumeRestores updated")
