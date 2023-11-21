@@ -51,6 +51,9 @@ type VirtualMachineRestoreStatus struct {
 
 	// +optional
 	Conditions []Condition `json:"conditions,omitempty"`
+
+	// +optional
+	Error *Error `json:"error,omitempty"`
 }
 
 // VolumeRestore contains the data neeed to restore a PVC
@@ -67,6 +70,10 @@ type VolumeRestore struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:printcolumn:name="TargetName",type="string",JSONPath=".spec.target.name"
+//+kubebuilder:printcolumn:name="Complete",type="boolean",JSONPath=".status.complete"
+//+kubebuilder:printcolumn:name="Complete",type="string",JSONPath=".status.restoreTime"
+//+kubebuilder:printcolumn:name="Error",type="string",JSONPath=".status.error"
 
 // VirtualMachineRestore is the Schema for the virtualmachinerestores API
 type VirtualMachineRestore struct {

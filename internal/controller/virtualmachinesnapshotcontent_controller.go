@@ -26,12 +26,10 @@ import (
 	librbd "github.com/ceph/go-ceph/rbd"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
-	"github.com/gookit/goutil/dump"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	"google.golang.org/grpc/codes"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -112,7 +110,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 			logger.Error(err, "getSecret")
 			return reconcile.Result{RequeueAfter: 15 * time.Second}, err
 		}
-		if r.handleDeletion(content, secret) != nil {
+		if r.volumeDeleteHandler(content, secret) != nil {
 			logger.Error(err, "volume deleteHandle")
 			return reconcile.Result{RequeueAfter: 15 * time.Second}, err
 		}
@@ -166,7 +164,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		if volumeBackup.VolumeSnapshotName == nil {
 			continue
 		}
-		if volumeBackup.VolumeName == content.Status.VolumeStatus[k].VolumeName {
+		if volumeBackup.VolumeName == content.Status.VolumeStatus[k].VolumeName && content.Status.VolumeStatus[k].ReadyToUse {
 			continue
 		}
 
@@ -333,19 +331,18 @@ func (r *VirtualMachineSnapshotContentReconciler) deleteVolumeHandler(e event.De
 		r.Log.Error(err, "getSecret")
 		return false
 	}
-	if r.handleDeletion(content, secret) != nil {
-		r.Log.Error(err, "handleDeletion")
+	if r.volumeDeleteHandler(content, secret) != nil {
+		r.Log.Error(err, "volumeDeleteHandler")
 		return false
 	}
 
 	return true
 }
 
-func (r *VirtualMachineSnapshotContentReconciler) handleDeletion(content *hitoseacomv1.VirtualMachineSnapshotContent, secret map[string]string) error {
+func (r *VirtualMachineSnapshotContentReconciler) volumeDeleteHandler(content *hitoseacomv1.VirtualMachineSnapshotContent, secret map[string]string) error {
 	for _, v := range content.Status.VolumeStatus {
-		r.Log.Info("rbd deleting", "volumeHandle", v.SlaveVolumeHandle)
+		r.Log.Info("volume deleting", "volumeHandle", v.SlaveVolumeHandle)
 		if err := r.DeleteVolumeSnapshot(context.Background(), v.SlaveVolumeHandle, secret, map[string]string{}); err != nil {
-			//r.Log.Error(err, fmt.Sprintf("Failed to remove volume %s", v.SlaveVolumeHandle))
 			return fmt.Errorf(fmt.Sprintf("Failed to remove volume %s", v.SlaveVolumeHandle))
 		}
 	}
@@ -432,6 +429,11 @@ func (r *VirtualMachineSnapshotContentReconciler) updateVolumeStatus(content *hi
 			break
 		}
 	}
+	//if !equality.Semantic.DeepEqual(content.Status.VolumeStatus[targetIndex], newVolumeStatus) {
+	//	fmt.Println("updateVolumeStatus !equality.Semantic.DeepEqual")
+	//	dump.Println("old Status => ", content.Status.VolumeStatus[targetIndex])
+	//	dump.Println("new Status => ", newVolumeStatus)
+	//}
 	if newVolumeStatus.CreationTime != nil {
 		content.Status.VolumeStatus[targetIndex].CreationTime = newVolumeStatus.CreationTime
 	}
@@ -446,11 +448,6 @@ func (r *VirtualMachineSnapshotContentReconciler) updateVolumeStatus(content *hi
 	}
 	if newVolumeStatus.Phase != 0 {
 		content.Status.VolumeStatus[targetIndex].Phase = newVolumeStatus.Phase
-	}
-	if !equality.Semantic.DeepEqual(content.Status.VolumeStatus[targetIndex], newVolumeStatus) {
-		fmt.Println("updateVolumeStatus !equality.Semantic.DeepEqual")
-		dump.Println("old Status => ", content.Status.VolumeStatus[targetIndex])
-		dump.Println("new Status => ", newVolumeStatus)
 	}
 	content.Status.VolumeStatus[targetIndex].ReadyToUse = newVolumeStatus.ReadyToUse
 	return r.Status().Update(context.Background(), content)

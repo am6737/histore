@@ -127,9 +127,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.VirtualMachineRestoreReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Log:    mgr.GetLogger(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Log:      mgr.GetLogger(),
+		Recorder: mgr.GetEventRecorderFor("VirtualMachineRestore"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachineRestore")
 		os.Exit(1)
