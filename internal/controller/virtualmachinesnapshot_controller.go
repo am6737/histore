@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"github.com/am6737/histore/pkg/config"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -208,6 +209,11 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 			continue
 		}
 
+		if _, ok := pvc.Labels["hitosea.com/histore"]; ok {
+			r.Log.Info("PVC snapshots not supported", vmSnapshot.Namespace, pvcName)
+			continue
+		}
+
 		volumeSnapshotName := fmt.Sprintf("vmsnapshot-%s-volume-%s", vmSnapshot.UID, pvcName)
 		vb := hitoseacomv1.VolumeBackup{
 			VolumeName: volumeName,
@@ -221,9 +227,12 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 		volumeBackups = append(volumeBackups, vb)
 	}
 
-	//sourceSpec, err := source.Spec()
-	//if err != nil {
-	//	return err
+	msc, err := getCephCsiConfigForSC(r.Client, config.DC.SlaveStorageClass)
+	if err != nil {
+		r.Log.Error(err, "getCephCsiConfigForSC")
+		return err
+	}
+
 	vm.Status = kubevirtv1.VirtualMachineStatus{}
 	content := &hitoseacomv1.VirtualMachineSnapshotContent{
 		ObjectMeta: metav1.ObjectMeta{
@@ -231,8 +240,8 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 			Namespace: vmSnapshot.Namespace,
 			//Finalizers: []string{vmSnapshotContentFinalizer},
 			Annotations: map[string]string{
-				prefixedSnapshotDeleteSecretNameKey:      "csi-ceph-secret-slave",
-				prefixedSnapshotDeleteSecretNamespaceKey: "default",
+				prefixedSnapshotDeleteSecretNameKey:      msc.NodeStageSecretName,
+				prefixedSnapshotDeleteSecretNamespaceKey: msc.NodeStageSecretNamespace,
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{

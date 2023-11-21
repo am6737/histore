@@ -72,11 +72,9 @@ var (
 // VirtualMachineSnapshotContentReconciler reconciles a VirtualMachineSnapshotContent object
 type VirtualMachineSnapshotContentReconciler struct {
 	client.Client
-	Scheme       *runtime.Scheme
-	Recorder     record.EventRecorder
-	Log          logr.Logger
-	MasterScName string
-	SlaveScName  string
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
+	Log      logr.Logger
 }
 
 //+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachinesnapshotcontents,verbs=get;list;watch;create;update;patch;delete
@@ -503,7 +501,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 
 	phase = contentCpy.Status.VolumeStatus[vindex].Phase
 
-	msc, err := getCephCsiConfigForSC(r.Client, r.MasterScName)
+	msc, err := getCephCsiConfigForSC(r.Client, config.DC.MasterStorageClass)
 	if err != nil {
 		r.Log.Error(err, "getCephCsiConfigForSC")
 		return false, err
@@ -522,7 +520,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 	}
 	defer masterCr.DeleteCredentials()
 
-	ssc, err := getCephCsiConfigForSC(r.Client, r.SlaveScName)
+	ssc, err := getCephCsiConfigForSC(r.Client, config.DC.SlaveStorageClass)
 	if err != nil {
 		r.Log.Error(err, "getCephCsiConfigForSC")
 		return false, err

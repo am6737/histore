@@ -52,10 +52,8 @@ var restoreAnnotationsToDelete = []string{
 // VirtualMachineRestoreReconciler reconciles a VirtualMachineRestore object
 type VirtualMachineRestoreReconciler struct {
 	client.Client
-	Scheme       *runtime.Scheme
-	Log          logr.Logger
-	MasterScName string
-	SlaveScName  string
+	Scheme *runtime.Scheme
+	Log    logr.Logger
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -453,7 +451,7 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(vmRestore *hitoseacom
 	//	return err
 	//}
 
-	ssc, err := getCephCsiConfigForSC(r.Client, r.SlaveScName)
+	ssc, err := getCephCsiConfigForSC(r.Client, config.DC.SlaveStorageClass)
 	if err != nil {
 		return err
 	}
