@@ -1,0 +1,234 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.3
+  creationTimestamp: null
+  name: schedules.hitosea.com
+spec:
+  group: hitosea.com
+  names:
+    kind: Schedule
+    listKind: ScheduleList
+    plural: schedules
+    shortNames:
+    - hvmss
+    singular: schedule
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.nextBackup
+      name: NextBackup
+      type: string
+    - jsonPath: .status.nextDelete
+      name: NextDelete
+      type: string
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: Schedule is the Schema for the schedules API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ScheduleSpec defines the desired state of Schedule
+            properties:
+              paused:
+                description: Paused specifies whether the schedule is paused or not
+                type: boolean
+              schedule:
+                description: Schedule is a time.Duration-parseable string describing
+                  how long the Backup.
+                type: string
+              template:
+                description: Template is the definition of the Backup to be run on
+                  the provided schedule
+                properties:
+                  excludedNamespaces:
+                    description: ExcludedNamespaces contains a list of namespaces
+                      that are not included in the backup.
+                    items:
+                      type: string
+                    nullable: true
+                    type: array
+                  includedNamespaces:
+                    description: IncludedNamespaces is a slice of namespace names
+                      to include objects from. If empty, all namespaces are included.
+                    items:
+                      type: string
+                    nullable: true
+                    type: array
+                  labelSelector:
+                    description: LabelSelector is a metav1.labelSelector to filter
+                      with when adding individual objects to the backup. If empty
+                      or nil, all objects are included. Optional.
+                    nullable: true
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: A label selector requirement is a selector
+                            that contains values, a key, and an operator that relates
+                            the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: operator represents a key's relationship
+                                to a set of values. Valid operators are In, NotIn,
+                                Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: values is an array of string values. If
+                                the operator is In or NotIn, the values array must
+                                be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced
+                                during a strategic merge patch.
+                              items:
+                                type: string
+                              type: array
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                      matchLabels:
+                        additionalProperties:
+                          type: string
+                        description: matchLabels is a map of {key,value} pairs. A
+                          single {key,value} in the matchLabels map is equivalent
+                          to an element of matchExpressions, whose key field is "key",
+                          the operator is "In", and the values array contains only
+                          "value". The requirements are ANDed.
+                        type: object
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  orLabelSelectors:
+                    description: OrLabelSelectors is list of metav1.labelSelector
+                      to filter with when adding individual objects to the backup.
+                      If multiple provided they will be joined by the OR operator.
+                      LabelSelector as well as OrLabelSelectors cannot co-exist in
+                      backup request, only one of them can be used.
+                    items:
+                      description: A label selector is a label query over a set of
+                        resources. The result of matchLabels and matchExpressions
+                        are ANDed. An empty label selector matches all objects. A
+                        null label selector matches no objects.
+                      properties:
+                        matchExpressions:
+                          description: matchExpressions is a list of label selector
+                            requirements. The requirements are ANDed.
+                          items:
+                            description: A label selector requirement is a selector
+                              that contains values, a key, and an operator that relates
+                              the key and values.
+                            properties:
+                              key:
+                                description: key is the label key that the selector
+                                  applies to.
+                                type: string
+                              operator:
+                                description: operator represents a key's relationship
+                                  to a set of values. Valid operators are In, NotIn,
+                                  Exists and DoesNotExist.
+                                type: string
+                              values:
+                                description: values is an array of string values.
+                                  If the operator is In or NotIn, the values array
+                                  must be non-empty. If the operator is Exists or
+                                  DoesNotExist, the values array must be empty. This
+                                  array is replaced during a strategic merge patch.
+                                items:
+                                  type: string
+                                type: array
+                            required:
+                            - key
+                            - operator
+                            type: object
+                          type: array
+                        matchLabels:
+                          additionalProperties:
+                            type: string
+                          description: matchLabels is a map of {key,value} pairs.
+                            A single {key,value} in the matchLabels map is equivalent
+                            to an element of matchExpressions, whose key field is
+                            "key", the operator is "In", and the values array contains
+                            only "value". The requirements are ANDed.
+                          type: object
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    nullable: true
+                    type: array
+                  ttl:
+                    description: TTL is a time.Duration-parseable string describing
+                      how long Snapshot lifecycle
+                    type: string
+                type: object
+            type: object
+          status:
+            description: ScheduleStatus defines the observed state of Schedule
+            properties:
+              lastBackup:
+                description: LastBackup is the last time a Backup was run for this
+                format: date-time
+                nullable: true
+                type: string
+              lastDelete:
+                description: LastDelete is the last time a Delete was run for this
+                format: date-time
+                nullable: true
+                type: string
+              nextBackup:
+                description: NextBackup is the next time a Backup was run for this
+                format: date-time
+                nullable: true
+                type: string
+              nextDelete:
+                description: NextDelete is the next time a Delete was run for this
+                format: date-time
+                nullable: true
+                type: string
+              phase:
+                description: Phase is the current phase of the Schedule
+                enum:
+                - Pause
+                - Enabled
+                - FailedValidation
+                type: string
+              schedule:
+                description: Schedule is a time.Duration-parseable string describing
+                  how long the Backup.
+                type: string
+              ttl:
+                description: TTL is a time.Duration-parseable string describing how
+                  long Snapshot lifecycle
+                type: string
+              validationErrors:
+                description: ValidationErrors is a slice of all validation errors
+                  (if applicable)
+                items:
+                  type: string
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
