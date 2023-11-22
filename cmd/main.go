@@ -88,7 +88,6 @@ func main() {
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
-	config.SetGlobals(cfg)
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -117,6 +116,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = config.SetGlobals(mgr.GetClient(), cfg); err != nil {
+		setupLog.Error(err, "unable to setGlobals")
+		os.Exit(1)
+	}
+
 	if err = (&controller.VirtualMachineSnapshotReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
@@ -127,9 +131,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.VirtualMachineRestoreReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Log:    mgr.GetLogger(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Log:      mgr.GetLogger(),
+		Recorder: mgr.GetEventRecorderFor("VirtualMachineRestore"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachineRestore")
 		os.Exit(1)

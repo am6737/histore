@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	hitoseacomv1 "github.com/am6737/histore/api/v1"
-	"github.com/gookit/goutil/dump"
+	"github.com/am6737/histore/pkg/config"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,8 +46,6 @@ type vmRestoreTarget struct {
 	controller *VirtualMachineRestoreReconciler
 	vmRestore  *hitoseacomv1.VirtualMachineRestore
 	vm         *kubevirtv1.VirtualMachine
-	oldPvc     *corev1.PersistentVolumeClaim
-	oldPv      *corev1.PersistentVolume
 }
 
 func (r *VirtualMachineRestoreReconciler) getTarget(vmRestore *hitoseacomv1.VirtualMachineRestore) (restoreTarget, error) {
@@ -86,32 +84,27 @@ func (r *VirtualMachineRestoreReconciler) getVM(namespace, name string) (*kubevi
 
 func (t *vmRestoreTarget) Ready() (bool, error) {
 	if !t.doesTargetVMExist() {
-		fmt.Println("Ready 1")
 		return true, nil
 	}
 
-	//log.Log.Object(t.vmRestore).V(3).Info("Checking VM ready")
-	//
-	//rs, err := t.vm.RunStrategy()
-	//if err != nil {
-	//	return false, err
-	//}
-	//
-	//if rs != kubevirtv1.RunStrategyHalted {
-	//	return false, fmt.Errorf("invalid RunStrategy %q", rs)
-	//}
-	//
-	//vmiKey, err := controller.KeyFunc(t.vm)
-	//if err != nil {
-	//	return false, err
-	//}
-	//
-	//_, exists, err := t.controller.VMIInformer.GetStore().GetByKey(vmiKey)
-	//if err != nil {
-	//	return false, err
-	//}
+	rs, err := t.vm.RunStrategy()
+	if err != nil {
+		return false, err
+	}
 
-	return true, nil
+	if rs != kubevirtv1.RunStrategyHalted {
+		return false, fmt.Errorf("invalid RunStrategy %q", rs)
+	}
+
+	vmi := &kubevirtv1.VirtualMachineInstance{}
+	if err = t.controller.Get(context.Background(), client.ObjectKey{Namespace: t.vm.Namespace, Name: t.vm.Name}, vmi); err != nil {
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, err
+	}
+
+	return false, nil
 }
 
 func (t *vmRestoreTarget) Reconcile() (bool, error) {
@@ -125,7 +118,6 @@ func (t *vmRestoreTarget) reconcileDataVolumes() (bool, error) {
 	createdDV := false
 	waitingDV := false
 	for _, dvt := range t.vm.Spec.DataVolumeTemplates {
-		dump.P("dvt => ", t.vm.Spec.DataVolumeTemplates)
 		dv, err := t.controller.getDV(t.vm.Namespace, dvt.Name)
 		if err != nil {
 			return false, err
@@ -141,25 +133,19 @@ func (t *vmRestoreTarget) reconcileDataVolumes() (bool, error) {
 			continue
 		}
 	}
-	fmt.Println("createdDV => ", createdDV)
-	fmt.Println("waitingDV => ", waitingDV)
 	return createdDV || waitingDV, nil
 }
 
 func (t *vmRestoreTarget) Cleanup() error {
 	var err error
-	fmt.Println("t.vmRestore.Status.DeletedDataVolumes => ", t.vmRestore.Status.DeletedDataVolumes)
 	for _, dvName := range t.vmRestore.Status.DeletedDataVolumes {
-		fmt.Println("要删除的dv => ", dvName)
 		dv := &cdiv1.DataVolume{}
 		if err = t.controller.Client.Get(context.Background(), types.NamespacedName{Namespace: t.vmRestore.Namespace, Name: dvName}, dv); err != nil {
 			if apierrors.IsNotFound(err) {
-				fmt.Println("dv 不存在 => ", dvName)
 				return nil
 			}
 			return err
 		}
-		fmt.Println("删除 dv ", dv)
 		if err = t.controller.Client.Delete(context.Background(), dv); err != nil {
 			return err
 		}
@@ -238,7 +224,6 @@ func (t *vmRestoreTarget) UpdateTarget(obj metav1.Object) {
 
 func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 	if t.doesTargetVMExist() && hasLastRestoreAnnotation(t.vmRestore, t.vm) {
-		fmt.Println("reconcileSpec 1")
 		return false, nil
 	}
 
@@ -246,12 +231,10 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-
-	if content == nil {
-		return false, fmt.Errorf("content 不存在")
-	}
-
-	fmt.Println("reconcileSpec 2")
+	//
+	//if content == nil {
+	//	return false, fmt.Errorf("content does not exist")
+	//}
 
 	snapshotVM := content.Spec.Source.VirtualMachine
 	if snapshotVM == nil {
@@ -266,21 +249,20 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 	for i, t := range snapshotVM.Spec.DataVolumeTemplates {
 		t.DeepCopyInto(&newTemplates[i])
 	}
-	fmt.Println("reconcileSpec 3")
 
 	for _, v := range snapshotVM.Spec.Template.Spec.Volumes {
 		nv := v.DeepCopy()
-		dump.Println("nv.DataVolume => ", nv.DataVolume)
-		dump.Println("nv.PersistentVolumeClaim => ", nv.PersistentVolumeClaim)
-		dump.Println("t.vmRestore.Status.Restores ", t.vmRestore.Status.Restores)
+		//dump.Println("nv.DataVolume => ", nv.DataVolume)
+		//dump.Println("nv.PersistentVolumeClaim => ", nv.PersistentVolumeClaim)
+		//dump.Println("t.vmRestore.Status.Restores ", t.vmRestore.Status.Restores)
 		if nv.DataVolume != nil || nv.PersistentVolumeClaim != nil {
 			for k := range t.vmRestore.Status.Restores {
 				vr := &t.vmRestore.Status.Restores[k]
-				fmt.Println("vmRestore status => ", vr)
+				//fmt.Println("vmRestore status => ", vr)
 				if vr.VolumeName != nv.Name {
 					continue
 				}
-				fmt.Println("reconcileSpec 2")
+				//fmt.Println("reconcileSpec 2")
 				pvc, err := t.controller.getPVC(t.vmRestore.Namespace, vr.PersistentVolumeClaimName)
 				if err != nil {
 					return false, err
@@ -293,8 +275,8 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 				if nv.DataVolume != nil {
 					templateIndex := -1
 					for i, dvt := range snapshotVM.Spec.DataVolumeTemplates {
-						fmt.Println("v.DataVolume.Name => ", v.DataVolume.Name)
-						fmt.Println(" dvt.Name => ", dvt.Name)
+						//fmt.Println("v.DataVolume.Name => ", v.DataVolume.Name)
+						//fmt.Println(" dvt.Name => ", dvt.Name)
 						if v.DataVolume.Name == dvt.Name {
 							templateIndex = i
 							break
@@ -305,8 +287,8 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 						if vr.DataVolumeName == nil {
 							updatePVC := pvc.DeepCopy()
 							dvName := restoreDVName(t.vmRestore, vr.VolumeName)
-							fmt.Println("pvc name => ", pvc.Name)
-							fmt.Println("restoreDVName -------1 ")
+							//fmt.Println("pvc name => ", pvc.Name)
+							//fmt.Println("restoreDVName -------1 ")
 							if updatePVC.Annotations[populatedForPVCAnnotation] != dvName {
 								if updatePVC.Annotations == nil {
 									updatePVC.Annotations = make(map[string]string)
@@ -325,7 +307,7 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 						dv.Name = *vr.DataVolumeName
 						newTemplates[templateIndex] = *dv
 						nv.DataVolume.Name = *vr.DataVolumeName
-						fmt.Println("vr.DataVolumeName => ", *vr.DataVolumeName)
+						//fmt.Println("vr.DataVolumeName => ", *vr.DataVolumeName)
 					} else {
 						// convert to PersistentVolumeClaim volume
 						nv = &kubevirtv1.Volume{
@@ -349,15 +331,15 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 		}
 		newVolumes = append(newVolumes, *nv)
 	}
-	fmt.Println("updatedStatus => ", updatedStatus)
+	//fmt.Println("updatedStatus => ", updatedStatus)
 	if t.doesTargetVMExist() && updatedStatus {
-		fmt.Println("t.doesTargetVMExist() && updatedStatus")
+		//fmt.Println("t.doesTargetVMExist() && updatedStatus")
 		// find DataVolumes that will no longer exist
 		for _, cdv := range t.vm.Spec.DataVolumeTemplates {
 			found := false
 			for _, ndv := range newTemplates {
-				fmt.Println("cdv.Name => ", cdv.Name)
-				fmt.Println("ndv.Name => ", ndv.Name)
+				//fmt.Println("cdv.Name => ", cdv.Name)
+				//fmt.Println("ndv.Name => ", ndv.Name)
 				if cdv.Name == ndv.Name {
 					found = true
 					break
@@ -371,7 +353,7 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 
 		return true, nil
 	}
-	fmt.Println("reconcileSpec 5")
+	//fmt.Println("reconcileSpec 5")
 	var newVM *kubevirtv1.VirtualMachine
 	if !t.doesTargetVMExist() {
 		newVM = &kubevirtv1.VirtualMachine{
@@ -400,20 +382,21 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 	}
 	newVM.Spec.DataVolumeTemplates = newTemplates
 	newVM.Spec.Template.Spec.Volumes = newVolumes
+
 	setLastRestoreAnnotation(t.vmRestore, newVM)
 
-	dump.Println("newVM ann => ", newVM.Annotations)
+	//dump.Println("newVM.Spec.DataVolumeTemplates => ", newVM.Spec.DataVolumeTemplates)
+	//dump.Println("newVM.Spec.Template.Spec.Volumes => ", newVM.Spec.Template.Spec.Volumes)
 
-	dump.Println("newVM.Spec.DataVolumeTemplates => ", newVM.Spec.DataVolumeTemplates)
-	dump.Println("newVM.Spec.Template.Spec.Volumes => ", newVM.Spec.Template.Spec.Volumes)
-	//
 	//newVM, err = patchVM(newVM, t.vmRestore.Spec.Patches)
 	//if err != nil {
 	//	return false, fmt.Errorf("error patching VM %s: %v", newVM.Name, err)
 	//}
 
 	if !t.doesTargetVMExist() {
-		//newVM, err = t.controller.Client.VirtualMachine(t.vmRestore.Namespace).Create(newVM)
+		if err = t.controller.Client.Create(context.TODO(), newVM); err != nil {
+			return false, err
+		}
 	} else {
 		if err = t.controller.Client.Update(context.TODO(), newVM); err != nil {
 			return false, err
@@ -439,21 +422,18 @@ func (t *vmRestoreTarget) createDataVolume(dvt kubevirtv1.DataVolumeTemplateSpec
 		return false, nil
 	}
 
-	fmt.Println("createDataVolume 1")
 	newDataVolume, err := CreateDataVolumeManifest(t.controller.Client, dvt, t.vm)
 	if err != nil {
 		return false, fmt.Errorf("Unable to create restore DataVolume manifest: %v", err)
 	}
-	fmt.Println("createDataVolume 2")
 	if newDataVolume.Annotations == nil {
 		newDataVolume.Annotations = make(map[string]string)
 	}
 	newDataVolume.Annotations[restoreNameAnnotation] = t.vmRestore.Name
 	newDataVolume.Namespace = corev1.NamespaceDefault
+	newDataVolume.Spec.Storage.StorageClassName = &config.DC.SlaveStorageClass
 
-	dump.Println("newDataVolume => ", newDataVolume)
-
-	fmt.Println("t.createDataVolume(dvt)")
+	//dump.Println("newDataVolume => ", newDataVolume)
 
 	if err = t.controller.Client.Create(context.Background(), newDataVolume); err != nil {
 		return false, fmt.Errorf("failed to create restore DataVolume: %v", err)

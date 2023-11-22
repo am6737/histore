@@ -214,14 +214,15 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 			continue
 		}
 
-		volumeSnapshotName := fmt.Sprintf("vmsnapshot-%s-volume-%s", vmSnapshot.UID, pvcName)
+		//volumeSnapshotName := fmt.Sprintf("vmsnapshot-%s-volume-%s", vmSnapshot.UID, pvcName)
 		vb := hitoseacomv1.VolumeBackup{
 			VolumeName: volumeName,
 			PersistentVolumeClaim: hitoseacomv1.PersistentVolumeClaim{
 				ObjectMeta: *getSimplifiedMetaObject(pvc.ObjectMeta),
 				Spec:       *pvc.Spec.DeepCopy(),
 			},
-			VolumeSnapshotName: &volumeSnapshotName,
+			//VolumeSnapshotName: &volumeSnapshotName,
+			VolumeSnapshotName: &vmSnapshot.Name,
 		}
 
 		volumeBackups = append(volumeBackups, vb)
@@ -506,7 +507,7 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		updateSnapshotCondition(vmSnapshotCpy, newFailureCondition(corev1.ConditionTrue, vmSnapshotDeadlineExceededError))
 	} else if vmSnapshotProgressing(vmSnapshotCpy) {
 		vmSnapshotCpy.Status.Phase = hitoseacomv1.InProgress
-		// TODO source status update 暂时省略
+		updateSnapshotCondition(vmSnapshotCpy, newProgressingCondition(corev1.ConditionTrue, "Operation complete"))
 		updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionFalse, "Not ready"))
 		if vmSnapshotDeleting(vmSnapshotCpy) {
 			vmSnapshotCpy.Status.Phase = hitoseacomv1.Deleting
