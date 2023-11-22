@@ -20,6 +20,16 @@ rules:
   - get
   - list
   - watch
+  - create
+- apiGroups:
+    - ""
+  resources:
+    - persistentvolumeclaims/status
+  verbs:
+    - get
+    - list
+    - update
+    - watch
 - apiGroups:
   - ""
   resources:
@@ -28,6 +38,7 @@ rules:
   - get
   - list
   - watch
+  - create
 - apiGroups:
   - ""
   resources:
@@ -156,12 +167,38 @@ rules:
   - get
   - list
   - watch
+  - update
+  - patch
 - apiGroups:
   - kubevirt.io
   resources:
   - virtualmachines/status
   verbs:
   - get
+- apiGroups:
+    - kubevirt.io
+  resources:
+    - virtualmachineinstances
+  verbs:
+    - get
+    - list
+    - watch
+- apiGroups:
+    - cdi.kubevirt.io
+  resources:
+    - datavolumes
+  verbs:
+    - get
+    - list
+    - watch
+    - create
+    - delete
+- apiGroups:
+    - kubevirt.io
+  resources:
+    - virtualmachineinstances/status
+  verbs:
+    - get
 - apiGroups:
   - snapshot.storage.k8s.io
   resources:

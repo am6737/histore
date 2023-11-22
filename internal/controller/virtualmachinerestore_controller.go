@@ -458,7 +458,7 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(
 	}
 
 	pvc := CreateRestoreStaticPVCDefFromVMRestore(vmRestore.Name, config.DC.SlaveStorageClass, volumeRestore.PersistentVolumeClaimName, volumeBackup, sourceVmName, sourceVmNamespace)
-	pvc.Namespace = corev1.NamespaceDefault
+	pvc.Namespace = sourceVmNamespace
 	target.Own(pvc)
 	if err := r.Client.Create(context.TODO(), pvc, &client.CreateOptions{}); err != nil {
 		log.Log.Error(err, "create pvc")
@@ -474,7 +474,7 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(
 
 	var deletionPolicy corev1.PersistentVolumeReclaimPolicy
 	if vmSnapshot.Spec.DeletionPolicy == nil {
-		deletionPolicy = corev1.PersistentVolumeReclaimDelete
+		deletionPolicy = corev1.PersistentVolumeReclaimRetain
 	} else {
 		deletionPolicy = corev1.PersistentVolumeReclaimPolicy(*vmSnapshot.Spec.DeletionPolicy)
 	}
