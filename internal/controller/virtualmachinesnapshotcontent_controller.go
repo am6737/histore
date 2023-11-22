@@ -339,7 +339,7 @@ func (r *VirtualMachineSnapshotContentReconciler) SetupWithManager(mgr ctrl.Mana
 
 func (r *VirtualMachineSnapshotContentReconciler) volumeDeleteHandler(content *hitoseacomv1.VirtualMachineSnapshotContent) error {
 
-	msc, err := getCephCsiConfigForSC(r.Client, config.DC.MasterStorageClass)
+	msc, err := config.GetCephCsiConfigForSC(r.Client, config.DC.MasterStorageClass)
 	if err != nil {
 		r.Log.Error(err, "getCephCsiConfigForSC")
 		return err
@@ -486,7 +486,7 @@ func (r *VirtualMachineSnapshotContentReconciler) updateVolumeStatus(content *hi
 }
 
 func (r *VirtualMachineSnapshotContentReconciler) getSecretMapForSC(storageClass string) (map[string]string, error) {
-	msc, err := getCephCsiConfigForSC(r.Client, storageClass)
+	msc, err := config.GetCephCsiConfigForSC(r.Client, storageClass)
 	if err != nil {
 		r.Log.Error(err, "getCephCsiConfigForSC")
 		return nil, err
@@ -536,7 +536,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 
 	phase = contentCpy.Status.VolumeStatus[vindex].Phase
 
-	msc, err := getCephCsiConfigForSC(r.Client, config.DC.MasterStorageClass)
+	msc, err := config.GetCephCsiConfigForSC(r.Client, config.DC.MasterStorageClass)
 	if err != nil {
 		r.Log.Error(err, "getCephCsiConfigForSC")
 		return false, err
@@ -555,7 +555,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 	}
 	defer masterCr.DeleteCredentials()
 
-	ssc, err := getCephCsiConfigForSC(r.Client, config.DC.SlaveStorageClass)
+	ssc, err := config.GetCephCsiConfigForSC(r.Client, config.DC.SlaveStorageClass)
 	if err != nil {
 		r.Log.Error(err, "getCephCsiConfigForSC")
 		return false, err
