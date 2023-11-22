@@ -224,7 +224,6 @@ func (t *vmRestoreTarget) UpdateTarget(obj metav1.Object) {
 
 func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 	if t.doesTargetVMExist() && hasLastRestoreAnnotation(t.vmRestore, t.vm) {
-		fmt.Println("hasLastRestoreAnnotation => ", t.vm.Annotations[lastRestoreAnnotation])
 		return false, nil
 	}
 

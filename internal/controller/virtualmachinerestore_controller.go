@@ -124,18 +124,20 @@ func (r *VirtualMachineRestoreReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, err
 	}
 
-	// let's make sure everything is initialized properly before continuing
-	if !equality.Semantic.DeepEqual(vmRestoreIn, vmRestoreOut) {
-		return ctrl.Result{}, r.doUpdate(vmRestoreIn, vmRestoreOut)
-	}
+	//// let's make sure everything is initialized properly before continuing
+	//if !equality.Semantic.DeepEqual(vmRestoreIn, vmRestoreOut) {
+	//	return reconcile.Result{
+	//		RequeueAfter: 5 * time.Second,
+	//	}, r.doUpdate(vmRestoreIn, vmRestoreOut)
+	//}
 
 	updated, err := r.reconcileVolumeRestores(vmRestoreOut, target)
 	if err != nil {
 		r.Log.Error(err, "Error reconciling VolumeRestores")
-		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
+		return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 	if updated {
-		//r.Log.Info("reconcileVolumeRestores updated")
+		r.Log.Info("reconcileVolumeRestores updated")
 		updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Creating new PVCs"))
 		updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for new PVCs"))
 		//return reconcile.Result{
@@ -269,7 +271,6 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 			restores = append(restores, vr)
 		}
 	}
-	//fmt.Println("reconcileVolumeRestores 3")
 
 	if vmRestore.Status == nil {
 		vmRestore.Status.Restores = restores
@@ -280,7 +281,6 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 		if len(vmRestore.Status.Restores) > 0 {
 			r.Log.Info("VMRestore in strange state")
 		}
-		fmt.Println("vmRestore.Status.Restores = restores")
 
 		vmRestore.Status.Restores = restores
 		return true, nil
@@ -321,7 +321,6 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 				log.Log.Error(err, "getBindingMode")
 				return false, err
 			}
-			//fmt.Println("1426 5")
 			if bindingMode == nil || *bindingMode == storagev1.VolumeBindingImmediate {
 				waitingPVC = true
 			}
