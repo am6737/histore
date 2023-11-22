@@ -36,8 +36,26 @@ func createVirtualMachineList() *kubevirtv1.VirtualMachineList {
 			},
 		},
 	}
+	vm4 := kubevirtv1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "vm4",
+			Namespace: "namespace3",
+			Labels: map[string]string{
+				"app": "app2",
+			},
+		},
+	}
+	vm5 := kubevirtv1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "vm5",
+			Namespace: "namespace3",
+			Labels: map[string]string{
+				"app": "app3",
+			},
+		},
+	}
 	vmList := &kubevirtv1.VirtualMachineList{}
-	vmList.Items = append(vmList.Items, vm1, vm2, vm3)
+	vmList.Items = append(vmList.Items, vm1, vm2, vm3, vm4, vm5)
 	return vmList
 }
 
@@ -45,22 +63,24 @@ func TestVirtualMachineFilter_Filter(t *testing.T) {
 	vmList := createVirtualMachineList()
 
 	testCases := []struct {
-		name               string
-		includedNamespaces []string
-		excludedNamespaces []string
-		labelSelector      *metav1.LabelSelector
-		orLabelSelectors   []*metav1.LabelSelector
-		expectedLength     int
+		name                     string
+		includedNamespaces       []string
+		excludedNamespaces       []string
+		labelSelector            *metav1.LabelSelector
+		orLabelSelectors         []*metav1.LabelSelector
+		excludedLabelSelector    *metav1.LabelSelector
+		excludedOrLabelSelectors []*metav1.LabelSelector
+		expectedLength           int
 	}{
 		{
 			name:               "IncludedNamespaces",
-			includedNamespaces: []string{"namespace1"},
-			expectedLength:     1,
+			includedNamespaces: []string{"namespace1", "namespace3"},
+			expectedLength:     3,
 		},
 		{
 			name:               "ExcludedNamespaces",
 			excludedNamespaces: []string{"namespace2"},
-			expectedLength:     1,
+			expectedLength:     3,
 		},
 		{
 			name: "LabelSelector",
@@ -79,16 +99,47 @@ func TestVirtualMachineFilter_Filter(t *testing.T) {
 					MatchLabels: map[string]string{"app": "app3"},
 				},
 			},
-			expectedLength: 2,
+			expectedLength: 4,
 		},
+		{
+			name: "ExcludedLabelSelector",
+			excludedLabelSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "app2"},
+			},
+			expectedLength: 3,
+		},
+		{
+			name: "ExcludedOrLabelSelectors",
+			excludedOrLabelSelectors: []*metav1.LabelSelector{
+				{
+					MatchLabels: map[string]string{"app": "app2"},
+				},
+				{
+					MatchLabels: map[string]string{"app": "app3"},
+				},
+			},
+			expectedLength: 1, // Excludes resources with "app=app2" or "app=app3"
+		},
+		{
+			name:               "IncludedAndExcludedLabelSelector",
+			includedNamespaces: []string{"namespace2"},
+			excludedLabelSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "app2"},
+			},
+			expectedLength: 1, // Namespace included but label excluded
+		},
+		// Add more test cases here to cover other combinations
 	}
 
+	// Run tests for each test case
 	for _, tc := range testCases {
 		filter := &VirtualMachineFilter{
-			IncludedNamespaces: tc.includedNamespaces,
-			ExcludedNamespaces: tc.excludedNamespaces,
-			LabelSelector:      tc.labelSelector,
-			OrLabelSelectors:   tc.orLabelSelectors,
+			IncludedNamespaces:       tc.includedNamespaces,
+			ExcludedNamespaces:       tc.excludedNamespaces,
+			LabelSelector:            tc.labelSelector,
+			OrLabelSelectors:         tc.orLabelSelectors,
+			ExcludedLabelSelector:    tc.excludedLabelSelector,
+			ExcludedOrLabelSelectors: tc.excludedOrLabelSelectors,
 		}
 
 		var resources []*unstructured.Unstructured

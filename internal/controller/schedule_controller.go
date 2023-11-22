@@ -88,7 +88,6 @@ func (r *ScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, errors.Wrapf(err, "error getting schedule %s", req.String())
 	}
 
-	// 更新状态
 	if err := r.updateScheduleStatus(schedule); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -99,8 +98,8 @@ func (r *ScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	var wg sync.WaitGroup
-	var mu sync.Mutex // 用于保护错误变量
-	var e []error     // 存储错误信息
+	var mu sync.Mutex
+	var e []error
 
 	wg.Add(2)
 	go func() {
@@ -205,7 +204,7 @@ func (r *ScheduleReconciler) getNextRunTime(schedule string, now time.Time) time
 		r.Log.Error(err, "error parsing schedule")
 		return time.Time{}
 	}
-	// 计算下次运行时间
+	// 计算下一次运行时间
 	nextRunTime := now.Add(interval)
 	return nextRunTime
 }
@@ -261,10 +260,12 @@ func (r *ScheduleReconciler) getResourcesToBackup(schedule *hitoseacomv1.Schedul
 	}
 
 	filteredResources := (&filter.VirtualMachineFilter{
-		IncludedNamespaces: schedule.Spec.Template.IncludedNamespaces,
-		ExcludedNamespaces: schedule.Spec.Template.ExcludedNamespaces,
-		LabelSelector:      schedule.Spec.Template.LabelSelector,
-		OrLabelSelectors:   schedule.Spec.Template.OrLabelSelectors,
+		IncludedNamespaces:       schedule.Spec.Template.IncludedNamespaces,
+		ExcludedNamespaces:       schedule.Spec.Template.ExcludedNamespaces,
+		LabelSelector:            schedule.Spec.Template.LabelSelector,
+		OrLabelSelectors:         schedule.Spec.Template.OrLabelSelectors,
+		ExcludedLabelSelector:    schedule.Spec.Template.ExcludedLabelSelector,
+		ExcludedOrLabelSelectors: schedule.Spec.Template.ExcludedOrLabelSelectors,
 	}).Filter(resources)
 
 	return filteredResources, nil
@@ -272,6 +273,7 @@ func (r *ScheduleReconciler) getResourcesToBackup(schedule *hitoseacomv1.Schedul
 
 func (r *ScheduleReconciler) deleteExpiredSnapshots(ctx context.Context, schedule *hitoseacomv1.Schedule) error {
 	nextRunTime := schedule.Status.NextDelete.Time
+	// 检查下次删除的时间是否已到
 	if r.ifDue(nextRunTime, r.Clock.Now()) {
 		vmsList := &hitoseacomv1.VirtualMachineSnapshotList{}
 		if err := r.Client.List(context.TODO(), vmsList); err != nil {
@@ -279,7 +281,7 @@ func (r *ScheduleReconciler) deleteExpiredSnapshots(ctx context.Context, schedul
 			return err
 		}
 
-		// 先过滤掉特定标签的快照
+		// 只获取Schedule创建的虚拟机快照资源
 		var filteredVMSSList []hitoseacomv1.VirtualMachineSnapshot
 		for _, vms := range vmsList.Items {
 			if _, ok := vms.ObjectMeta.Labels[ScheduleSnapshotLabelKey]; ok && vms.Status.Phase != hitoseacomv1.InProgress {
@@ -292,7 +294,7 @@ func (r *ScheduleReconciler) deleteExpiredSnapshots(ctx context.Context, schedul
 			creationTime := vmss.ObjectMeta.CreationTimestamp.Time
 			expirationTime := creationTime.Add(schedule.Spec.Template.TTL.Duration)
 
-			// ttl到期
+			// 判断是否超过了TTL过期时间
 			if r.Clock.Now().After(expirationTime) {
 				if err := r.Snap.DeleteSnapshot(ctx, vmss.Name, vmss.Namespace); err != nil {
 					r.Log.Error(err, "DeleteSnapshot")
