@@ -228,7 +228,7 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 		volumeBackups = append(volumeBackups, vb)
 	}
 
-	msc, err := getCephCsiConfigForSC(r.Client, config.DC.SlaveStorageClass)
+	msc, err := config.GetCephCsiConfigForSC(r.Client, config.DC.SlaveStorageClass)
 	if err != nil {
 		r.Log.Error(err, "getCephCsiConfigForSC")
 		return err

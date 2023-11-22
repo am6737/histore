@@ -17,7 +17,10 @@ limitations under the License.
 package config
 
 import (
+	"context"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
 )
 
@@ -57,6 +60,14 @@ type CephCsiConfig struct {
 	SecretMap                       map[string]string
 	Parameters                      map[string]string
 	ImageFeatures                   map[string]string
+}
+
+func GetCephCsiConfigForSC(client client.Client, scName string) (*CephCsiConfig, error) {
+	sc := &storagev1.StorageClass{}
+	if err := client.Get(context.Background(), types.NamespacedName{Name: scName}, sc); err != nil {
+		return nil, err
+	}
+	return NewCephCsiConfig(sc), nil
 }
 
 func NewCephCsiConfig(sc *storagev1.StorageClass) *CephCsiConfig {

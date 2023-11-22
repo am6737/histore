@@ -52,6 +52,20 @@ type BackupSpec struct {
 	// +nullable
 	OrLabelSelectors []*metav1.LabelSelector `json:"orLabelSelectors,omitempty"`
 
+	// ExcludedLabelSelector is a metav1.labelSelector to filter out resources.
+	// If provided, any resources matching this label selector will be excluded from the backup.
+	// +optional
+	// +nullable
+	ExcludedLabelSelector *metav1.LabelSelector `json:"excludedLabelSelector,omitempty"`
+
+	// ExcludedOrLabelSelectors is a list of metav1.labelSelector to filter out resources.
+	// If multiple provided, they will be joined by the OR operator.
+	// ExcludedLabelSelector as well as ExcludedOrLabelSelectors cannot co-exist in backup request,
+	// only one of them can be used.
+	// +optional
+	// +nullable
+	ExcludedOrLabelSelectors []*metav1.LabelSelector `json:"excludedOrLabelSelectors,omitempty"`
+
 	// TTL is a time.Duration-parseable string describing how long
 	// Snapshot lifecycle
 	// +optional

@@ -467,7 +467,7 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(
 
 	r.Log.Info("restore pvc created successfully", "namespace", pvc.Namespace, "name", pvc.Name)
 
-	ssc, err := getCephCsiConfigForSC(r.Client, config.DC.SlaveStorageClass)
+	ssc, err := config.GetCephCsiConfigForSC(r.Client, config.DC.SlaveStorageClass)
 	if err != nil {
 		return err
 	}

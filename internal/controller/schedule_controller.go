@@ -19,14 +19,15 @@ package controller
 import (
 	"context"
 	"fmt"
+	"github.com/am6737/histore/pkg/util/filter"
+	"github.com/am6737/histore/pkg/util/kube"
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clocks "k8s.io/utils/clock"
 	kubevirtv1 "kubevirt.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"strconv"
 	"sync"
 	"time"
@@ -87,7 +88,6 @@ func (r *ScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, errors.Wrapf(err, "error getting schedule %s", req.String())
 	}
 
-	// 更新状态
 	if err := r.updateScheduleStatus(schedule); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -97,31 +97,42 @@ func (r *ScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	var err error
 	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var e []error
+
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		if err = r.backupSnapshots(ctx, schedule); err != nil {
-			r.Log.Error(err, "Error while creating snapshots")
+		if err := r.backupSnapshots(ctx, schedule); err != nil {
+			mu.Lock()
+			e = append(e, err)
+			mu.Unlock()
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		if err = r.deleteExpiredSnapshots(ctx, schedule); err != nil {
-			r.Log.Error(err, "Error while deleting snapshots")
+		if err := r.deleteExpiredSnapshots(ctx, schedule); err != nil {
+			mu.Lock()
+			e = append(e, err)
+			mu.Unlock()
 		}
 	}()
 	wg.Wait()
+
+	if len(e) > 0 {
+		r.Log.Info("Requeuing reconciliation due to e")
+		return ctrl.Result{Requeue: true}, nil
+	}
 
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	s := NewPeriodicalEnqueueSource(mgr.GetClient(), r.Log, &hitoseacomv1.ScheduleList{}, scheduleSyncPeriod, PeriodicalEnqueueSourceOption{})
+	s := kube.NewPeriodicalEnqueueSource(mgr.GetClient(), r.Log, &hitoseacomv1.ScheduleList{}, scheduleSyncPeriod, kube.PeriodicalEnqueueSourceOption{})
 	return ctrl.NewControllerManagedBy(mgr).
-		WithEventFilter(NewAllEventPredicate(func(obj client.Object) bool {
+		WithEventFilter(kube.NewAllEventPredicate(func(obj client.Object) bool {
 			schedule := obj.(*hitoseacomv1.Schedule)
 			if pause := schedule.Spec.Paused; pause {
 				schedule.Status.Phase = hitoseacomv1.SchedulePhasePause
@@ -135,24 +146,6 @@ func (r *ScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&hitoseacomv1.Schedule{}).
 		Watches(s, nil).
 		Complete(r)
-}
-
-// NewAllEventPredicate creates a new Predicate that checks all the events with the provided func
-func NewAllEventPredicate(f func(object client.Object) bool) predicate.Predicate {
-	return predicate.Funcs{
-		CreateFunc: func(event event.CreateEvent) bool {
-			return f(event.Object)
-		},
-		DeleteFunc: func(event event.DeleteEvent) bool {
-			return f(event.Object)
-		},
-		UpdateFunc: func(event event.UpdateEvent) bool {
-			return f(event.ObjectNew)
-		},
-		GenericFunc: func(event event.GenericEvent) bool {
-			return f(event.Object)
-		},
-	}
 }
 
 func (r *ScheduleReconciler) updateScheduleStatus(vms *hitoseacomv1.Schedule) error {
@@ -211,7 +204,7 @@ func (r *ScheduleReconciler) getNextRunTime(schedule string, now time.Time) time
 		r.Log.Error(err, "error parsing schedule")
 		return time.Time{}
 	}
-	// 计算下次运行时间
+	// 计算下一次运行时间
 	nextRunTime := now.Add(interval)
 	return nextRunTime
 }
@@ -219,24 +212,16 @@ func (r *ScheduleReconciler) getNextRunTime(schedule string, now time.Time) time
 func (r *ScheduleReconciler) backupSnapshots(ctx context.Context, schedule *hitoseacomv1.Schedule) error {
 	nextRunTime := schedule.Status.NextBackup.Time
 	if r.ifDue(nextRunTime, r.Clock.Now()) {
-		vmList := &kubevirtv1.VirtualMachineList{}
-		if err := r.Client.List(context.TODO(), vmList); err != nil {
-			r.Log.Error(err, "get vm list")
+
+		filteredResources, err := r.getResourcesToBackup(schedule)
+		if err != nil {
 			return err
 		}
 
-		// 滤掉虚拟机
-		var filteredVMSSList []kubevirtv1.VirtualMachine
-		for _, vms := range vmList.Items {
-			if vms.Status.Ready {
-				filteredVMSSList = append(filteredVMSSList, vms)
-			}
-		}
-
-		for _, vm := range filteredVMSSList {
-			name := "schedule-snapshot-" + strconv.FormatInt(time.Now().Unix(), 10) + "-" + vm.Name
+		for _, vm := range filteredResources {
+			name := "schedule-snapshot-" + strconv.FormatInt(time.Now().Unix(), 10) + "-" + vm.GetName()
 			r.Log.Info("Attempting to create Scheduled Tasks", "Name", name)
-			if err := r.Snap.CreateSnapshot(ctx, name, vm.Namespace, "", vm.Name); err != nil {
+			if err := r.Snap.CreateSnapshot(ctx, name, vm.GetNamespace(), "", vm.GetName()); err != nil {
 				r.Log.Error(err, "CreateSnapshot")
 				continue
 			}
@@ -246,7 +231,7 @@ func (r *ScheduleReconciler) backupSnapshots(ctx context.Context, schedule *hito
 		t1 := r.Clock.Now()
 		schedule.Status.LastBackup = &metav1.Time{Time: t1}
 		schedule.Status.NextBackup = &metav1.Time{Time: r.getNextRunTime(schedule.Spec.Schedule, t1)}
-		if err := r.Client.Status().Update(context.Background(), schedule); err != nil {
+		if err = r.Client.Status().Update(context.Background(), schedule); err != nil {
 			return err
 		}
 
@@ -255,8 +240,40 @@ func (r *ScheduleReconciler) backupSnapshots(ctx context.Context, schedule *hito
 	return nil
 }
 
+func (r *ScheduleReconciler) getResourcesToBackup(schedule *hitoseacomv1.Schedule) ([]*unstructured.Unstructured, error) {
+	vmList := &kubevirtv1.VirtualMachineList{}
+	if err := r.Client.List(context.TODO(), vmList); err != nil {
+		r.Log.Error(err, "get vm list")
+		return nil, err
+	}
+
+	var resources []*unstructured.Unstructured
+	for i := range vmList.Items {
+		vm := vmList.Items[i]
+		obj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&vm)
+		if err != nil {
+			r.Log.Error(err, "Failed to convert to Unstructured")
+			return nil, err
+		}
+		unstructuredObj := &unstructured.Unstructured{Object: obj}
+		resources = append(resources, unstructuredObj)
+	}
+
+	filteredResources := (&filter.VirtualMachineFilter{
+		IncludedNamespaces:       schedule.Spec.Template.IncludedNamespaces,
+		ExcludedNamespaces:       schedule.Spec.Template.ExcludedNamespaces,
+		LabelSelector:            schedule.Spec.Template.LabelSelector,
+		OrLabelSelectors:         schedule.Spec.Template.OrLabelSelectors,
+		ExcludedLabelSelector:    schedule.Spec.Template.ExcludedLabelSelector,
+		ExcludedOrLabelSelectors: schedule.Spec.Template.ExcludedOrLabelSelectors,
+	}).Filter(resources)
+
+	return filteredResources, nil
+}
+
 func (r *ScheduleReconciler) deleteExpiredSnapshots(ctx context.Context, schedule *hitoseacomv1.Schedule) error {
 	nextRunTime := schedule.Status.NextDelete.Time
+	// 检查下次删除的时间是否已到
 	if r.ifDue(nextRunTime, r.Clock.Now()) {
 		vmsList := &hitoseacomv1.VirtualMachineSnapshotList{}
 		if err := r.Client.List(context.TODO(), vmsList); err != nil {
@@ -264,7 +281,7 @@ func (r *ScheduleReconciler) deleteExpiredSnapshots(ctx context.Context, schedul
 			return err
 		}
 
-		// 先过滤掉特定标签的快照
+		// 只获取Schedule创建的虚拟机快照资源
 		var filteredVMSSList []hitoseacomv1.VirtualMachineSnapshot
 		for _, vms := range vmsList.Items {
 			if _, ok := vms.ObjectMeta.Labels[ScheduleSnapshotLabelKey]; ok && vms.Status.Phase != hitoseacomv1.InProgress {
@@ -277,7 +294,7 @@ func (r *ScheduleReconciler) deleteExpiredSnapshots(ctx context.Context, schedul
 			creationTime := vmss.ObjectMeta.CreationTimestamp.Time
 			expirationTime := creationTime.Add(schedule.Spec.Template.TTL.Duration)
 
-			// ttl到期
+			// 判断是否超过了TTL过期时间
 			if r.Clock.Now().After(expirationTime) {
 				if err := r.Snap.DeleteSnapshot(ctx, vmss.Name, vmss.Namespace); err != nil {
 					r.Log.Error(err, "DeleteSnapshot")
