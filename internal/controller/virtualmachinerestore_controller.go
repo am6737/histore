@@ -133,7 +133,7 @@ func (r *VirtualMachineRestoreReconciler) Reconcile(ctx context.Context, req ctr
 
 	updated, err := r.reconcileVolumeRestores(vmRestoreOut, target)
 	if err != nil {
-		r.Log.Error(err, "Error reconciling VolumeRestores")
+		r.Log.Error(err, "reconciling VolumeRestores")
 		return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 	if updated {
@@ -299,18 +299,22 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 				log.Log.Error(err, "getRestoreVolumeBackup")
 				return false, err
 			}
-			var slaveVolumeHandle string
+			var slaveVolumeHandle, snapshotVolumeHandle string
 			for _, status := range content.Status.VolumeStatus {
 				if backup.VolumeName == status.VolumeName {
 					slaveVolumeHandle = status.SlaveVolumeHandle
+					snapshotVolumeHandle = status.SnapshotVolumeHandle
 					break
 				}
 			}
 			if slaveVolumeHandle == "" {
 				return false, fmt.Errorf("SlaveVolumeHandle missing %+v", backup)
 			}
+			if snapshotVolumeHandle == "" {
+				return false, fmt.Errorf("SnapshotVolumeHandle missing %+v", backup)
+			}
 
-			if err = r.createRestorePVC(vmRestore, target, backup, &restore, content.Spec.Source.VirtualMachine.Name, content.Spec.Source.VirtualMachine.Namespace, slaveVolumeHandle); err != nil {
+			if err = r.createRestorePVC(vmRestore, target, backup, &restore, content.Spec.Source.VirtualMachine.Name, content.Spec.Source.VirtualMachine.Namespace, slaveVolumeHandle, snapshotVolumeHandle); err != nil {
 				log.Log.Error(err, "createRestorePVC")
 				return false, err
 			}
@@ -435,7 +439,7 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(
 	target restoreTarget,
 	volumeBackup *hitoseacomv1.VolumeBackup,
 	volumeRestore *hitoseacomv1.VolumeRestore,
-	sourceVmName, sourceVmNamespace, slaveVolumeHandle string) error {
+	sourceVmName, sourceVmNamespace, slaveVolumeHandle, snapshotVolumeHandle string) error {
 	if volumeBackup == nil || volumeBackup.VolumeSnapshotName == nil {
 		r.Log.Error(errors.New(""), fmt.Sprintf("VolumeSnapshot name missing %+v", volumeBackup))
 		return fmt.Errorf("missing VolumeSnapshot name")
@@ -457,6 +461,28 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(
 		return fmt.Errorf("missing volumeRestore")
 	}
 
+	ssc, err := config.GetCephCsiConfigForSC(r.Client, config.DC.SlaveStorageClass)
+	if err != nil {
+		return err
+	}
+
+	secret, err := r.getSecret(ssc.NodeStageSecretNamespace, ssc.NodeStageSecretName)
+	if err != nil {
+		r.Log.Error(err, "getSecret")
+		return err
+	}
+
+	_, err = (&VolumeService{Client: r.Client, Log: r.Log}).RestoreSnapshot(context.Background(), &RestoreSnapshotRequest{
+		VolumeId:       snapshotVolumeHandle,
+		SourceVolumeId: slaveVolumeHandle,
+		Secrets:        secret,
+		Parameters:     map[string]string{"clusterID": ssc.ClusterID, "pool": ssc.Pool},
+	})
+	if err != nil {
+		r.Log.Error(err, "RestoreSnapshot")
+		return err
+	}
+
 	pvc := CreateRestoreStaticPVCDefFromVMRestore(vmRestore.Name, config.DC.SlaveStorageClass, volumeRestore.PersistentVolumeClaimName, volumeBackup, sourceVmName, sourceVmNamespace)
 	pvc.Namespace = sourceVmNamespace
 	target.Own(pvc)
@@ -467,21 +493,16 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(
 
 	r.Log.Info("restore pvc created successfully", "namespace", pvc.Namespace, "name", pvc.Name)
 
-	ssc, err := config.GetCephCsiConfigForSC(r.Client, config.DC.SlaveStorageClass)
-	if err != nil {
-		return err
-	}
-
 	var deletionPolicy corev1.PersistentVolumeReclaimPolicy
 	if vmSnapshot.Spec.DeletionPolicy == nil {
-		deletionPolicy = corev1.PersistentVolumeReclaimRetain
+		deletionPolicy = corev1.PersistentVolumeReclaimDelete
 	} else {
 		deletionPolicy = corev1.PersistentVolumeReclaimPolicy(*vmSnapshot.Spec.DeletionPolicy)
 	}
 
-	pv := r.CreateRestoreStaticPVDefFromVMRestore(pvc, ssc, slaveVolumeHandle, deletionPolicy)
+	pv := r.CreateRestoreStaticPVDefFromVMRestore(pvc, ssc, snapshotVolumeHandle, deletionPolicy)
 	pv.Name = "pvc-" + string(pvc.UID)
-	if err = r.Client.Create(context.TODO(), pv, &client.CreateOptions{}); err != nil {
+	if err = r.Client.Create(context.TODO(), pv); err != nil {
 		return err
 	}
 
@@ -501,8 +522,9 @@ func (r *VirtualMachineRestoreReconciler) CreateRestoreStaticPVDefFromVMRestore(
 	if pv.Annotations == nil {
 		pv.Annotations = make(map[string]string)
 	}
-	pvc.Annotations["volume.kubernetes.io/provisioner-deletion-secret-name"] = ssc.NodeStageSecretName
-	pvc.Annotations["volume.kubernetes.io/provisioner-deletion-secret-namespace"] = ssc.NodeStageSecretNamespace
+	pv.Annotations["pv.kubernetes.io/provisioned-by"] = ssc.Driver
+	pv.Annotations[deletionSecretName] = ssc.NodeStageSecretName
+	pv.Annotations[deletionSecretNamespace] = ssc.NodeStageSecretNamespace
 	return pv
 }
 
@@ -697,4 +719,21 @@ func CreateRestorePVCDef(restorePVCName string, volumeSnapshot *vsv1.VolumeSnaps
 
 	pvc.Spec.VolumeName = ""
 	return pvc
+}
+
+func (r *VirtualMachineRestoreReconciler) getSecret(namespace, name string) (map[string]string, error) {
+	// 通过 secret 名称和命名空间获取 secret 对象
+	secret := &corev1.Secret{}
+	if err := r.Client.Get(context.Background(), client.ObjectKey{Name: name, Namespace: namespace}, secret); err != nil {
+		r.Log.Error(err, "get secret")
+		return nil, err
+	}
+	secretToMap := func() map[string]string {
+		dataMap := make(map[string]string)
+		for key, value := range secret.Data {
+			dataMap[key] = string(value)
+		}
+		return dataMap
+	}()
+	return secretToMap, nil
 }

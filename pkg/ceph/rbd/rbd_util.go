@@ -24,6 +24,8 @@ import (
 	"github.com/am6737/histore/pkg/ceph/journal"
 	"github.com/am6737/histore/pkg/ceph/util"
 	"github.com/am6737/histore/pkg/util/log"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"math"
 	"os"
 	"path/filepath"
@@ -87,7 +89,7 @@ const (
 )
 
 // rbdImage contains common attributes and methods for the RbdVolume and
-// rbdSnapshot types.
+// RbdSnapshot types.
 type rbdImage struct {
 	// RbdImageName is the name of the RBD image backing this rbdVolume.
 	// This does not have a JSON tag as it is not stashed in JSON encoded
@@ -181,8 +183,8 @@ type RbdVolume struct {
 	readOnly           bool
 }
 
-// rbdSnapshot represents a CSI snapshot and its RBD snapshot specifics.
-type rbdSnapshot struct {
+// RbdSnapshot represents a CSI snapshot and its RBD snapshot specifics.
+type RbdSnapshot struct {
 	rbdImage
 
 	// SourceVolumeID is the volume ID of RbdImageName, that is exchanged with CSI drivers
@@ -285,6 +287,106 @@ func prepareKrbdFeatureAttrs() (uint64, error) {
 	//fmt.Printf()("kernel version is too old: %q", release)
 
 	return 0, os.ErrNotExist
+}
+
+// GenSnapFromSnapID generates a rbdSnapshot structure from the provided identifier, updating
+// the structure with elements from on-disk snapshot metadata as well.
+func GenSnapFromSnapID(
+	ctx context.Context,
+	rbdSnap *RbdSnapshot,
+	snapshotID string,
+	cr *util.Credentials,
+	secrets map[string]string,
+) error {
+	var vi util.CSIIdentifier
+
+	rbdSnap.VolID = snapshotID
+
+	err := vi.DecomposeCSIID(rbdSnap.VolID)
+	if err != nil {
+		log.ErrorLog(ctx, "error decoding snapshot ID (%s) (%s)", err, rbdSnap.VolID)
+
+		return err
+	}
+
+	rbdSnap.ClusterID = vi.ClusterID
+
+	rbdSnap.Monitors, _, err = util.GetMonsAndClusterID(ctx, rbdSnap.ClusterID, false)
+	if err != nil {
+		log.ErrorLog(ctx, "failed getting mons (%s)", err)
+
+		return err
+	}
+
+	rbdSnap.Pool, err = util.GetPoolName(rbdSnap.Monitors, cr, vi.LocationID)
+	if err != nil {
+		return err
+	}
+	rbdSnap.JournalPool = rbdSnap.Pool
+
+	rbdSnap.RadosNamespace, err = util.GetRadosNamespace(util.CsiConfigFile, rbdSnap.ClusterID)
+	if err != nil {
+		return err
+	}
+
+	j, err := snapJournal.Connect(rbdSnap.Monitors, rbdSnap.RadosNamespace, cr)
+	if err != nil {
+		return err
+	}
+	defer j.Destroy()
+
+	imageAttributes, err := j.GetImageAttributes(
+		ctx, rbdSnap.Pool, vi.ObjectUUID, true)
+	if err != nil {
+		return err
+	}
+	rbdSnap.ImageID = imageAttributes.ImageID
+	rbdSnap.RequestName = imageAttributes.RequestName
+	rbdSnap.RbdImageName = imageAttributes.SourceName
+	rbdSnap.RbdSnapName = imageAttributes.ImageName
+	rbdSnap.ReservedID = vi.ObjectUUID
+	rbdSnap.Owner = imageAttributes.Owner
+	// convert the journal pool ID to name, for use in DeleteSnapshot cases
+	if imageAttributes.JournalPoolID != util.InvalidPoolID {
+		rbdSnap.JournalPool, err = util.GetPoolName(rbdSnap.Monitors, cr, imageAttributes.JournalPoolID)
+		if err != nil {
+			// TODO: If pool is not found we may leak the image (as DeleteSnapshot will return success)
+			return err
+		}
+	}
+
+	err = rbdSnap.Connect(cr)
+	defer func() {
+		if err != nil {
+			rbdSnap.Destroy()
+		}
+	}()
+	if err != nil {
+		return fmt.Errorf("failed to connect to %q: %w",
+			rbdSnap, err)
+	}
+
+	if imageAttributes.KmsID != "" && imageAttributes.EncryptionType == util.EncryptionTypeBlock {
+		err = rbdSnap.configureBlockEncryption(imageAttributes.KmsID, secrets)
+		if err != nil {
+			return fmt.Errorf("failed to configure block encryption for "+
+				"%q: %w", rbdSnap, err)
+		}
+	}
+	if imageAttributes.KmsID != "" && imageAttributes.EncryptionType == util.EncryptionTypeFile {
+		err = rbdSnap.configureFileEncryption(imageAttributes.KmsID, secrets)
+		if err != nil {
+			return fmt.Errorf("failed to configure file encryption for "+
+				"%q: %w", rbdSnap, err)
+		}
+	}
+
+	err = updateSnapshotDetails(rbdSnap)
+	if err != nil {
+		return fmt.Errorf("failed to update snapshot details for %q: %w", rbdSnap, err)
+	}
+
+	return err
 }
 
 // GetKrbdSupportedFeatures load the module if needed and return supported
@@ -410,7 +512,7 @@ func (ri *rbdImage) String() string {
 }
 
 // String returns the snap-spec (pool/{namespace/}image@snap) format of the snapshot.
-func (rs *rbdSnapshot) String() string {
+func (rs *RbdSnapshot) String() string {
 	if rs.RadosNamespace != "" {
 		return fmt.Sprintf("%s/%s/%s@%s", rs.Pool, rs.RadosNamespace, rs.RbdImageName, rs.RbdSnapName)
 	}
@@ -519,6 +621,24 @@ func (ri *rbdImage) open() (*librbd.Image, error) {
 	return image, nil
 }
 
+func (rv *RbdVolume) generateTempClone() *RbdVolume {
+	tempClone := RbdVolume{}
+	tempClone.conn = rv.conn.Copy()
+	// The temp clone image need to have deep flatten feature
+	f := []string{librbd.FeatureNameLayering, librbd.FeatureNameDeepFlatten}
+	tempClone.ImageFeatureSet = librbd.FeatureSetFromNames(f)
+	tempClone.ClusterID = rv.ClusterID
+	tempClone.Monitors = rv.Monitors
+	tempClone.Pool = rv.Pool
+	tempClone.RadosNamespace = rv.RadosNamespace
+	// The temp cloned image name will be always (rbd image name + "-temp")
+	// this name will be always unique, as cephcsi never creates an image with
+	// this format for new rbd images
+	tempClone.RbdImageName = rv.RbdImageName + "-temp"
+
+	return &tempClone
+}
+
 // isInUse checks if there is a watcher on the image. It returns true if there
 // is a watcher on the image, otherwise returns false.
 // In case of mirroring, the image should be primary to check watchers if the
@@ -623,8 +743,8 @@ func (ri *rbdImage) ensureImageCleanup(ctx context.Context) error {
 	return nil
 }
 
-// DeleteImage deletes a ceph image with provision and volume options.
-func (ri *rbdImage) DeleteImage(ctx context.Context) error {
+// deleteImage deletes a ceph image with provision and volume options.
+func (ri *rbdImage) deleteImage(ctx context.Context) error {
 	image := ri.RbdImageName
 
 	//fmt.Println()(ctx, "rbd: delete %s using mon %s, pool %s", image, ri.Monitors, ri.Pool)
@@ -784,7 +904,7 @@ func flattenClonedRbdImages(
 
 	for _, snapName := range origNameList {
 		rv.RbdImageName = snapName.origSnapName
-		err = rv.flattenRbdImage(ctx, true, 4, 8)
+		err = rv.flattenForceRbdImage(ctx)
 		if err != nil {
 			log.ErrorLog(ctx, "failed to flatten %s; err %v", rv, err)
 
@@ -792,6 +912,84 @@ func flattenClonedRbdImages(
 		}
 	}
 
+	return nil
+}
+
+func (ri *rbdImage) IsFlattenCompleted(maxWait time.Duration) (bool, error) {
+	ta, err := ri.conn.GetTaskAdmin()
+	if err != nil {
+		return false, err
+	}
+	found := false
+	startTime := time.Now()
+	for {
+		tasks, err := ta.List()
+		if err != nil {
+			return false, err
+		}
+		if len(tasks) == 0 {
+			return true, nil
+		}
+		for _, task := range tasks {
+			if task.Refs.Action == "flatten" &&
+				task.Refs.PoolName == ri.Pool &&
+				task.Refs.PoolNamespace == ri.RadosNamespace &&
+				task.Refs.ImageName == ri.RbdImageName {
+				found = true
+				break
+			} else {
+				found = true
+			}
+		}
+
+		if !found {
+			return true, nil
+		}
+
+		if time.Since(startTime) >= maxWait {
+			break
+		}
+
+		time.Sleep(5 * time.Second)
+	}
+	return false, nil
+}
+
+func (ri *rbdImage) flattenForceRbdImage(ctx context.Context) error {
+	var err error
+
+	log.DebugLog(ctx, "rbd: adding task to flatten image %q", ri)
+
+	ta, err := ri.conn.GetTaskAdmin()
+	if err != nil {
+		return err
+	}
+
+	_, err = ta.AddFlatten(admin.NewImageSpec(ri.Pool, ri.RadosNamespace, ri.RbdImageName))
+	rbdCephMgrSupported := isCephMgrSupported(ctx, ri.ClusterID, err)
+	if rbdCephMgrSupported {
+		if err != nil {
+			// discard flattening error if the image does not have any parent
+			rbdFlattenNoParent := fmt.Sprintf("Image %s/%s does not have a parent", ri.Pool, ri.RbdImageName)
+			if strings.Contains(err.Error(), rbdFlattenNoParent) {
+				return nil
+			}
+			log.ErrorLog(ctx, "failed to add task flatten for %s : %v", ri, err)
+			return err
+		}
+		log.DebugLog(ctx, "successfully added task to flatten image %q", ri)
+	}
+	if !rbdCephMgrSupported {
+		log.DebugLog(
+			ctx,
+			"task manager does not support flatten,image will be flattened once hardlimit is reached: %v",
+			err)
+
+		if err = ri.flatten(); err != nil {
+			log.DebugLog(ctx, "rbd failed to flatten image %s %s: %v", ri.Pool, ri.RbdImageName, err)
+			return err
+		}
+	}
 	return nil
 }
 
@@ -809,14 +1007,6 @@ func (ri *rbdImage) flattenRbdImage(
 		if err != nil {
 			return err
 		}
-		//fmt.Println(
-		//	ctx,
-		//	fmt.Sprintf(
-		//		"clone depth is (%d), configured softlimit (%d) and hardlimit (%d) for %s",
-		//		depth,
-		//		softlimit,
-		//		hardlimit,
-		//		ri))
 		log.ExtendedLog(
 			ctx,
 			"clone depth is (%d), configured softlimit (%d) and hardlimit (%d) for %s",
@@ -825,10 +1015,10 @@ func (ri *rbdImage) flattenRbdImage(
 			hardlimit,
 			ri)
 	}
-	//
-	//if !forceFlatten && (depth < hardlimit) && (depth < softlimit) {
-	//	return nil
-	//}
+
+	if !forceFlatten && (depth < hardlimit) && (depth < softlimit) {
+		return nil
+	}
 
 	log.DebugLog(ctx, "rbd: adding task to flatten image %q", ri)
 
@@ -837,7 +1027,7 @@ func (ri *rbdImage) flattenRbdImage(
 		return err
 	}
 
-	resp, err := ta.AddFlatten(admin.NewImageSpec(ri.Pool, ri.RadosNamespace, ri.RbdImageName))
+	_, err = ta.AddFlatten(admin.NewImageSpec(ri.Pool, ri.RadosNamespace, ri.RbdImageName))
 	rbdCephMgrSupported := isCephMgrSupported(ctx, ri.ClusterID, err)
 	if rbdCephMgrSupported {
 		if err != nil {
@@ -869,63 +1059,38 @@ func (ri *rbdImage) flattenRbdImage(
 			}
 		}
 	}
-
-	taskStatus, err := ta.GetTaskByID(resp.ID)
-	if err != nil {
-		return err
-	}
-	log.DebugLog(ctx, "Task Status: ", formatTaskStatus(taskStatus))
-	is := false
-	for {
-		// 确保任务已从列表中移除
-		taskList, err := ta.List()
-		if err != nil {
-			return err
-		}
-		for _, task := range taskList {
-			if task.ID == taskStatus.ID {
-				is = true
-			} else {
-				is = false
-			}
-		}
-		if !is {
-			log.DebugLog(ctx, "Task completion", taskStatus.Refs.ImageName)
-			return nil
-		}
-		time.Sleep(time.Second)
-	}
+	return nil
 }
 
 func formatTaskStatus(taskStatus admin.TaskResponse) string {
-	return fmt.Sprintf(`Message: %s`, taskStatus.Message)
-	//return fmt.Sprintf(`
-	//	Task ID: %s
-	//	Action: %s
-	//	Pool Name: %s
-	//	Pool Namespace: %s
-	//	Image Name: %s
-	//	Image ID: %s
-	//	In Progress: %t
-	//	Progress: %f
-	//	Retry Attempts: %d
-	//	Retry Time: %s
-	//	Retry Message: %s
-	//	Message: %s
-	//`,
-	//	taskStatus.ID,
-	//	taskStatus.Refs.Action,
-	//	taskStatus.Refs.PoolName,
-	//	taskStatus.Refs.PoolNamespace,
-	//	taskStatus.Refs.ImageName,
-	//	taskStatus.Refs.ImageID,
-	//	taskStatus.InProgress,
-	//	taskStatus.Progress,
-	//	taskStatus.RetryAttempts,
-	//	taskStatus.RetryTime,
-	//	taskStatus.RetryMessage,
-	//	taskStatus.Message,
-	//)
+	//return fmt.Sprintf(`Message: %s`, taskStatus.Message)
+	return fmt.Sprintf(`
+		Task ID: %s
+		Action: %s
+		Pool Name: %s
+		Pool Namespace: %s
+		Image Name: %s
+		Image ID: %s
+		In Progress: %t
+		Progress: %f
+		Retry Attempts: %d
+		Retry Time: %s
+		Retry Message: %s
+		Message: %s
+	`,
+		taskStatus.ID,
+		taskStatus.Refs.Action,
+		taskStatus.Refs.PoolName,
+		taskStatus.Refs.PoolNamespace,
+		taskStatus.Refs.ImageName,
+		taskStatus.Refs.ImageID,
+		taskStatus.InProgress,
+		taskStatus.Progress,
+		taskStatus.RetryAttempts,
+		taskStatus.RetryTime,
+		taskStatus.RetryMessage,
+		taskStatus.Message,
+	)
 }
 
 func (ri *rbdImage) getParentName() (string, error) {
@@ -1012,11 +1177,11 @@ func (ri *rbdImage) checkImageChainHasFeature(ctx context.Context, feature uint6
 	}
 }
 
-// genSnapFromSnapID generates a rbdSnapshot structure from the provided identifier, updating
+// genSnapFromSnapID generates a RbdSnapshot structure from the provided identifier, updating
 // the structure with elements from on-disk snapshot metadata as well.
 func genSnapFromSnapID(
 	ctx context.Context,
-	rbdSnap *rbdSnapshot,
+	rbdSnap *RbdSnapshot,
 	snapshotID string,
 	cr *util.Credentials,
 	secrets map[string]string,
@@ -1113,8 +1278,8 @@ func genSnapFromSnapID(
 }
 
 // updateSnapshotDetails will copy the details from the RbdVolume to the
-// rbdSnapshot. example copying size from RbdVolume to rbdSnapshot.
-func updateSnapshotDetails(rbdSnap *rbdSnapshot) error {
+// RbdSnapshot. example copying size from RbdVolume to RbdSnapshot.
+func updateSnapshotDetails(rbdSnap *RbdSnapshot) error {
 	//vol := generateVolFromSnap(rbdSnap)
 	//err := vol.Connect(rbdSnap.conn.Creds)
 	//if err != nil {
@@ -1127,6 +1292,58 @@ func updateSnapshotDetails(rbdSnap *rbdSnapshot) error {
 	//	return err
 	//}
 	//rbdSnap.VolSize = vol.VolSize
+
+	return nil
+}
+
+func generateVolFromSnap(rbdSnap *RbdSnapshot) *RbdVolume {
+	vol := new(RbdVolume)
+	vol.ClusterID = rbdSnap.ClusterID
+	vol.VolID = rbdSnap.VolID
+	vol.Monitors = rbdSnap.Monitors
+	vol.Pool = rbdSnap.Pool
+	vol.JournalPool = rbdSnap.JournalPool
+	vol.RadosNamespace = rbdSnap.RadosNamespace
+	vol.RbdImageName = rbdSnap.RbdSnapName
+	vol.ImageID = rbdSnap.ImageID
+	// copyEncryptionConfig cannot be used here because the volume and the
+	// snapshot will have the same volumeID which cases the panic in
+	// copyEncryptionConfig function.
+	vol.blockEncryption = rbdSnap.blockEncryption
+	vol.fileEncryption = rbdSnap.fileEncryption
+
+	return vol
+}
+
+// CleanUpImageAndSnapReservation cleans up the image from the trash and
+// snapshot reservation in rados OMAP.
+func CleanUpImageAndSnapReservation(ctx context.Context, rbdSnap *RbdSnapshot, cr *util.Credentials) error {
+	rbdVol := generateVolFromSnap(rbdSnap)
+	err := rbdVol.Connect(cr)
+	if err != nil {
+		return status.Error(codes.Internal, err.Error())
+	}
+	defer rbdVol.Destroy()
+
+	err = rbdVol.openIoctx()
+	if err != nil {
+		return status.Error(codes.Internal, err.Error())
+	}
+
+	// cleanup the image from trash if the error is image not found.
+	err = rbdVol.ensureImageCleanup(ctx)
+	if err != nil {
+		log.ErrorLog(ctx, "failed to delete rbd image: %q with error: %v", rbdVol.Pool, rbdVol.VolName, err)
+
+		return status.Error(codes.Internal, err.Error())
+	}
+	err = UndoSnapReservation(ctx, rbdSnap, cr)
+	if err != nil {
+		log.ErrorLog(ctx, "failed to remove reservation for snapname (%s) with backing snap %q",
+			rbdSnap.RequestName, rbdSnap, err)
+
+		return status.Error(codes.Internal, err.Error())
+	}
 
 	return nil
 }
@@ -1482,10 +1699,10 @@ func (rv *RbdVolume) validateImageFeatures(imageFeatures string) error {
 	return nil
 }
 
-func GenSnapFromOptions(ctx context.Context, rbdVol *RbdVolume, snapOptions map[string]string) (*rbdSnapshot, error) {
+func GenSnapFromOptions(ctx context.Context, rbdVol *RbdVolume, snapOptions map[string]string) (*RbdSnapshot, error) {
 	var err error
 
-	rbdSnap := &rbdSnapshot{}
+	rbdSnap := &RbdSnapshot{}
 	rbdSnap.Pool = rbdVol.Pool
 	rbdSnap.JournalPool = rbdVol.JournalPool
 	rbdSnap.RadosNamespace = rbdVol.RadosNamespace
@@ -1513,7 +1730,7 @@ func (ri *rbdImage) HasSnapshotFeature() bool {
 	return (uint64(ri.ImageFeatureSet) & librbd.FeatureLayering) == librbd.FeatureLayering
 }
 
-func (ri *rbdImage) CreateSnapshot(ctx context.Context, pOpts *rbdSnapshot) error {
+func (ri *rbdImage) CreateSnapshot(ctx context.Context, pOpts *RbdSnapshot) error {
 	log.DebugLog(ctx, "rbd: snap create %s using mon %s", pOpts, pOpts.Monitors)
 	image, err := ri.open()
 	if err != nil {
@@ -1526,7 +1743,7 @@ func (ri *rbdImage) CreateSnapshot(ctx context.Context, pOpts *rbdSnapshot) erro
 	return err
 }
 
-func (ri *rbdImage) deleteSnapshot(ctx context.Context, pOpts *rbdSnapshot) error {
+func (ri *rbdImage) deleteSnapshot(ctx context.Context, pOpts *RbdSnapshot) error {
 	log.DebugLog(ctx, "rbd: snap rm %s using mon %s", pOpts, pOpts.Monitors)
 	image, err := ri.open()
 	if err != nil {
@@ -1548,7 +1765,7 @@ func (ri *rbdImage) deleteSnapshot(ctx context.Context, pOpts *rbdSnapshot) erro
 
 func (rv *RbdVolume) cloneRbdImageFromSnapshot(
 	ctx context.Context,
-	pSnapOpts *rbdSnapshot,
+	pSnapOpts *RbdSnapshot,
 	parentVol *RbdVolume,
 ) error {
 	var err error
@@ -1754,7 +1971,7 @@ checkSnapExists queries rbd about the snapshots of the given image and returns
 ErrImageNotFound if provided image is not found, and ErrSnapNotFound if
 provided snap is not found in the images snapshot list.
 */
-func (ri *rbdImage) checkSnapExists(rbdSnap *rbdSnapshot) error {
+func (ri *rbdImage) checkSnapExists(rbdSnap *RbdSnapshot) error {
 	image, err := ri.open()
 	if err != nil {
 		return err

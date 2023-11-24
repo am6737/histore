@@ -121,7 +121,7 @@ func (r *ScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	wg.Wait()
 
 	if len(e) > 0 {
-		r.Log.Info("Requeuing reconciliation due to e")
+		r.Log.Info(fmt.Sprintf("Requeuing reconciliation due to %v", e))
 		return ctrl.Result{Requeue: true}, nil
 	}
 
