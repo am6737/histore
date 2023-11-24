@@ -43,7 +43,7 @@ func validateNonEmptyField(field, fieldName, structName string) error {
 	return nil
 }
 
-func validateRbdSnap(rbdSnap *rbdSnapshot) error {
+func validateRbdSnap(rbdSnap *RbdSnapshot) error {
 	var err error
 
 	if err = validateNonEmptyField(rbdSnap.RequestName, "RequestName", "rbdSnapshot"); err != nil {
@@ -96,7 +96,7 @@ func UndoVolReservation(ctx context.Context, rbdVol *RbdVolume, cr *util.Credent
 
 // ReserveVol is a helper routine to request a rbdVolume name reservation and generate the
 // volume ID for the generated name.
-func ReserveVol(ctx context.Context, rbdVol *RbdVolume, rbdSnap *rbdSnapshot, cr *util.Credentials) error {
+func ReserveVol(ctx context.Context, rbdVol *RbdVolume, rbdSnap *RbdSnapshot, cr *util.Credentials) error {
 	var err error
 
 	//err = updateTopologyConstraints(rbdVol, rbdSnap)
@@ -136,10 +136,24 @@ func ReserveVol(ctx context.Context, rbdVol *RbdVolume, rbdSnap *rbdSnapshot, cr
 	return nil
 }
 
+// undoVolReservation is a helper routine to undo a name reservation for rbdVolume.
+func undoVolReservation(ctx context.Context, rbdVol *RbdVolume, cr *util.Credentials) error {
+	j, err := volJournal.Connect(rbdVol.Monitors, rbdVol.RadosNamespace, cr)
+	if err != nil {
+		return err
+	}
+	defer j.Destroy()
+
+	err = j.UndoReservation(ctx, rbdVol.JournalPool, rbdVol.Pool,
+		rbdVol.RbdImageName, rbdVol.RequestName)
+
+	return err
+}
+
 func CheckSnapCloneExists(
 	ctx context.Context,
 	parentVol *RbdVolume,
-	rbdSnap *rbdSnapshot,
+	rbdSnap *RbdSnapshot,
 	cr *util.Credentials,
 ) (bool, error) {
 	err := validateRbdSnap(rbdSnap)
@@ -249,8 +263,8 @@ func CheckSnapCloneExists(
 	return true, nil
 }
 
-// undoSnapReservation is a helper routine to undo a name reservation for rbdSnapshot.
-func undoSnapReservation(ctx context.Context, rbdSnap *rbdSnapshot, cr *util.Credentials) error {
+// UndoSnapReservation is a helper routine to undo a name reservation for rbdSnapshot.
+func UndoSnapReservation(ctx context.Context, rbdSnap *RbdSnapshot, cr *util.Credentials) error {
 	j, err := snapJournal.Connect(rbdSnap.Monitors, rbdSnap.RadosNamespace, cr)
 	if err != nil {
 		return err

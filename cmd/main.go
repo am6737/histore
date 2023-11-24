@@ -18,10 +18,11 @@ package main
 
 import (
 	"flag"
-	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
-	clocks "k8s.io/utils/clock"
 	"os"
 	"time"
+
+	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	clocks "k8s.io/utils/clock"
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
@@ -84,7 +85,7 @@ func main() {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	opts := zap.Options{
-		Development: true,
+		Development: false,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -143,6 +144,7 @@ func main() {
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Log:      mgr.GetLogger(),
+		Vc:       (&controller.VolumeService{Client: mgr.GetClient(), Log: mgr.GetLogger()}),
 		Recorder: mgr.GetEventRecorderFor("VirtualMachineSnapshotContent"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachineSnapshotContent")
@@ -156,6 +158,10 @@ func main() {
 		Snap:   controller.NewVirtualMachineSnapshot(mgr.GetClient(), mgr.GetScheme()),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Schedule")
+		os.Exit(1)
+	}
+	if err = (&hitoseacomv1.VirtualMachineSnapshot{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "VirtualMachineSnapshot")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder

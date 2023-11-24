@@ -107,6 +107,9 @@ type VolumeStatus struct {
 	SlaveVolumeHandle string `json:"slaveVolumeHandle,omitempty"`
 
 	// +optional
+	SnapshotVolumeHandle string `json:"snapshotVolumeHandle,omitempty"`
+
+	// +optional
 	VolumeName string `json:"volumeName,omitempty"`
 
 	// +optional
