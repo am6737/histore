@@ -360,6 +360,9 @@ func (r *VirtualMachineSnapshotContentReconciler) volumeDeleteHandler(content *h
 
 	for _, v := range content.Status.VolumeStatus {
 		r.Log.Info("volume deleting", "volumeHandle", v.SlaveVolumeHandle)
+		if v.CreationTime == nil {
+			return nil
+		}
 		if !v.ReadyToUse {
 			masterVolumeHandle := getSlaveVolumeHandle(v.SlaveVolumeHandle, msc.ClusterID)
 			if err = r.DeleteVolumeSnapshot(context.Background(), masterVolumeHandle, masterSecret, map[string]string{}); err != nil {
@@ -694,9 +697,9 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 			if deleteClone {
 				if _, err = r.Vc.DeleteVolume(ctx, &DeleteVolumeRequest{
 					VolumeId: vol.VolumeId,
-					Secrets:  map[string]string{"clusterID": clusterID},
+					Secrets:  masterSecret,
 				}); err != nil {
-					r.Log.Error(err, "delete volume failed")
+					r.Log.Error(err, "delete volume failed", "volumeHandle", vol.VolumeId)
 				}
 			}
 		}()

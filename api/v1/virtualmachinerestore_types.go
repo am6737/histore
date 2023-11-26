@@ -70,6 +70,7 @@ type VolumeRestore struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:resource:shortName=hvmr
 //+kubebuilder:printcolumn:name="TargetName",type="string",JSONPath=".spec.target.name"
 //+kubebuilder:printcolumn:name="Complete",type="boolean",JSONPath=".status.complete"
 //+kubebuilder:printcolumn:name="RestoreTime",type="string",JSONPath=".status.restoreTime"

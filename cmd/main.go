@@ -160,10 +160,6 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Schedule")
 		os.Exit(1)
 	}
-	if err = (&hitoseacomv1.VirtualMachineSnapshot{}).SetupWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "VirtualMachineSnapshot")
-		os.Exit(1)
-	}
 	//+kubebuilder:scaffold:builder
 	//if err = (&hitoseacomv1.VirtualMachineSnapshot{}).SetupWebhookWithManager(mgr); err != nil {
 	//	setupLog.Error(err, "unable to create webhook", "webhook", "VirtualMachineSnapshot")

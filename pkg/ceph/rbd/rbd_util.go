@@ -938,7 +938,7 @@ func (ri *rbdImage) IsFlattenCompleted(maxWait time.Duration) (bool, error) {
 				found = true
 				break
 			} else {
-				found = true
+				found = false
 			}
 		}
 

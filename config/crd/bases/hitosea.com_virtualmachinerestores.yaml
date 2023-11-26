@@ -12,6 +12,8 @@ spec:
     kind: VirtualMachineRestore
     listKind: VirtualMachineRestoreList
     plural: virtualmachinerestores
+    shortNames:
+    - hvmr
     singular: virtualmachinerestore
   scope: Namespaced
   versions:
