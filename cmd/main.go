@@ -18,10 +18,11 @@ package main
 
 import (
 	"flag"
-	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
-	clocks "k8s.io/utils/clock"
 	"os"
 	"time"
+
+	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	clocks "k8s.io/utils/clock"
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
@@ -75,8 +76,8 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	cfg := config.NewDriverConfig()
-	flag.StringVar(&cfg.MasterStorageClass, "master-storage-class", "csi-cephrdb-sc-master", "Address of the CSI driver socket.")
-	flag.StringVar(&cfg.SlaveStorageClass, "slave-storage-class", "csi-cephrdb-sc-slave", "Address of the Slave CSI driver socket.")
+	flag.StringVar(&cfg.MasterStorageClass, "master-storage-class", "csi-cephrdb-sc-master", "The StorageClass name of the main cluster")
+	flag.StringVar(&cfg.SlaveStorageClass, "slave-storage-class", "csi-cephrdb-sc-slave", "The StorageClass name of the slave cluster")
 	flag.Int64Var(&config.SlavePoolID, "slave-pool-id", 0, "Pool ID of the backup cluster")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -84,7 +85,7 @@ func main() {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	opts := zap.Options{
-		Development: true,
+		Development: false,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -143,6 +144,7 @@ func main() {
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Log:      mgr.GetLogger(),
+		Vc:       (&controller.VolumeService{Client: mgr.GetClient(), Log: mgr.GetLogger()}),
 		Recorder: mgr.GetEventRecorderFor("VirtualMachineSnapshotContent"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachineSnapshotContent")
@@ -159,6 +161,10 @@ func main() {
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
+	//if err = (&hitoseacomv1.VirtualMachineSnapshot{}).SetupWebhookWithManager(mgr); err != nil {
+	//	setupLog.Error(err, "unable to create webhook", "webhook", "VirtualMachineSnapshot")
+	//	os.Exit(1)
+	//}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")

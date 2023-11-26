@@ -17,33 +17,44 @@ rules:
   resources:
   - persistentvolumeclaims
   verbs:
+  - create
   - get
   - list
   - watch
-  - create
+  - update
 - apiGroups:
-    - ""
+  - ""
   resources:
-    - persistentvolumeclaims/status
+  - persistentvolumeclaims/status
   verbs:
-    - get
-    - list
-    - update
-    - watch
+  - get
+  - list
+  - update
+  - watch
 - apiGroups:
   - ""
   resources:
   - persistentvolumes
   verbs:
+  - create
   - get
   - list
   - watch
-  - create
 - apiGroups:
   - ""
   resources:
   - secrets
   verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cdi.kubevirt.io
+  resources:
+  - datavolumes
+  verbs:
+  - create
+  - delete
   - get
   - list
   - watch
@@ -162,43 +173,33 @@ rules:
 - apiGroups:
   - kubevirt.io
   resources:
-  - virtualmachines
+  - virtualmachineinstances
   verbs:
   - get
   - list
   - watch
-  - update
+- apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachineinstances/status
+  verbs:
+  - get
+- apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachines
+  verbs:
+  - get
+  - list
   - patch
+  - update
+  - watch
 - apiGroups:
   - kubevirt.io
   resources:
   - virtualmachines/status
   verbs:
   - get
-- apiGroups:
-    - kubevirt.io
-  resources:
-    - virtualmachineinstances
-  verbs:
-    - get
-    - list
-    - watch
-- apiGroups:
-    - cdi.kubevirt.io
-  resources:
-    - datavolumes
-  verbs:
-    - get
-    - list
-    - watch
-    - create
-    - delete
-- apiGroups:
-    - kubevirt.io
-  resources:
-    - virtualmachineinstances/status
-  verbs:
-    - get
 - apiGroups:
   - snapshot.storage.k8s.io
   resources:

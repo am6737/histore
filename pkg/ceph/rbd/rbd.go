@@ -18,14 +18,13 @@ import (
 func CloneFromSnapshot(
 	ctx context.Context,
 	rbdVol *RbdVolume,
-	rbdSnap *rbdSnapshot,
+	rbdSnap *RbdSnapshot,
 	cr *util.Credentials,
 	parameters map[string]string,
 ) (*csi.CreateSnapshotResponse, error) {
 	vol := GenerateVolFromSnap(rbdSnap)
 	err := vol.Connect(cr)
 	if err != nil {
-		fmt.Println("vol.Connect ---> ", err)
 		uErr := undoSnapshotCloning(ctx, rbdVol, rbdSnap, vol, cr)
 		if uErr != nil {
 			fmt.Println(ctx, fmt.Sprintf("failed undoing reservation of snapshot: %s %v", rbdSnap.RequestName, uErr))
@@ -39,15 +38,6 @@ func CloneFromSnapshot(
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-
-	var (
-		// occurs.
-		rbdHardMaxCloneDepth uint
-
-		// rbdSoftMaxCloneDepth is the soft limit for maximum number of nested volume clones that are taken before flatten
-		// occurs.
-		rbdSoftMaxCloneDepth uint
-	)
 
 	err = vol.flattenRbdImage(ctx, false, rbdHardMaxCloneDepth, rbdSoftMaxCloneDepth)
 	if errors.Is(err, ErrFlattenInProgress) {
@@ -107,10 +97,102 @@ const (
 	volSnapContentNameKey = csiParameterPrefix + "volumesnapshotcontent/name"
 )
 
+func CleanupRBDImage(ctx context.Context,
+	rbdVol *RbdVolume, cr *util.Credentials,
+) (*csi.DeleteVolumeResponse, error) {
+	mirroringInfo, err := rbdVol.GetImageMirroringInfo()
+	if err != nil {
+		log.ErrorLog(ctx, err.Error())
+
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	// Cleanup only omap data if the following condition is met
+	// Mirroring is enabled on the image
+	// Local image is secondary
+	// Local image is in up+replaying state
+	if mirroringInfo.State == librbd.MirrorImageEnabled && !mirroringInfo.Primary {
+		// If the image is in a secondary state and its up+replaying means its
+		// an healthy secondary and the image is primary somewhere in the
+		// remote cluster and the local image is getting replayed. Delete the
+		// OMAP data generated as we cannot delete the secondary image. When
+		// the image on the primary cluster gets deleted/mirroring disabled,
+		// the image on all the remote (secondary) clusters will get
+		// auto-deleted. This helps in garbage collecting the OMAP, PVC and PV
+		// objects after failback operation.
+		localStatus, rErr := rbdVol.GetLocalState()
+		if rErr != nil {
+			return nil, status.Error(codes.Internal, rErr.Error())
+		}
+		if localStatus.Up && localStatus.State == librbd.MirrorImageStatusStateReplaying {
+			if err = undoVolReservation(ctx, rbdVol, cr); err != nil {
+				log.ErrorLog(ctx, "failed to remove reservation for volume (%s) with backing image (%s) (%s)",
+					rbdVol.RequestName, rbdVol.RbdImageName, err)
+
+				return nil, status.Error(codes.Internal, err.Error())
+			}
+
+			return &csi.DeleteVolumeResponse{}, nil
+		}
+		log.ErrorLog(ctx,
+			"secondary image status is up=%t and state=%s",
+			localStatus.Up,
+			localStatus.State)
+	}
+
+	inUse, err := rbdVol.isInUse()
+	if err != nil {
+		log.ErrorLog(ctx, "failed getting information for image (%s): (%s)", rbdVol, err)
+
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if inUse {
+		log.ErrorLog(ctx, "rbd %s is still being used", rbdVol)
+
+		return nil, status.Errorf(codes.Internal, "rbd %s is still being used", rbdVol.RbdImageName)
+	}
+
+	// delete the temporary rbd image created as part of volume clone during
+	// create volume
+	tempClone := rbdVol.generateTempClone()
+	err = tempClone.deleteImage(ctx)
+	if err != nil {
+		if errors.Is(err, ErrImageNotFound) {
+			err = tempClone.ensureImageCleanup(ctx)
+			if err != nil {
+				return nil, status.Error(codes.Internal, err.Error())
+			}
+		} else {
+			// return error if it is not ErrImageNotFound
+			log.ErrorLog(ctx, "failed to delete rbd image: %s with error: %v",
+				tempClone, err)
+
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+
+	// Deleting rbd image
+	log.DebugLog(ctx, "deleting image %s", rbdVol.RbdImageName)
+	if err = rbdVol.deleteImage(ctx); err != nil {
+		log.ErrorLog(ctx, "failed to delete rbd image: %s with error: %v",
+			rbdVol, err)
+
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	if err = undoVolReservation(ctx, rbdVol, cr); err != nil {
+		log.ErrorLog(ctx, "failed to remove reservation for volume (%s) with backing image (%s) (%s)",
+			rbdVol.RequestName, rbdVol.RbdImageName, err)
+
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &csi.DeleteVolumeResponse{}, nil
+}
+
 func DoSnapshotClone(
 	ctx context.Context,
 	parentVol *RbdVolume,
-	rbdSnap *rbdSnapshot,
+	rbdSnap *RbdSnapshot,
 	cr *util.Credentials,
 ) (*RbdVolume, error) {
 	// generate cloned volume details from snapshot
@@ -136,7 +218,7 @@ func DoSnapshotClone(
 		if err != nil {
 			if !errors.Is(err, ErrFlattenInProgress) {
 				// cleanup clone and snapshot
-				errCleanUp := cleanUpSnapshot(ctx, cloneRbd, rbdSnap, cloneRbd)
+				errCleanUp := CleanUpSnapshot(ctx, cloneRbd, rbdSnap, cloneRbd)
 				if errCleanUp != nil {
 					log.ErrorLog(ctx, "failed to cleanup snapshot and clone: %v", errCleanUp)
 				}
@@ -183,7 +265,7 @@ func DoSnapshotClone(
 		return cloneRbd, err
 	}
 
-	err = cloneRbd.flattenRbdImage(ctx, false, rbdHardMaxCloneDepth, rbdSoftMaxCloneDepth)
+	err = cloneRbd.flattenRbdImage(ctx, false, 4, 8)
 	if err != nil {
 		return cloneRbd, err
 	}
@@ -191,14 +273,52 @@ func DoSnapshotClone(
 	return cloneRbd, nil
 }
 
+// reserveSnap is a helper routine to request a rbdSnapshot name reservation and generate the
+// volume ID for the generated name.
+func ReserveSnap(ctx context.Context, rbdSnap *RbdSnapshot, rbdVol *RbdVolume, cr *util.Credentials) error {
+	var err error
+
+	journalPoolID, imagePoolID, err := util.GetPoolIDs(ctx, rbdSnap.Monitors, rbdSnap.JournalPool, rbdSnap.Pool, cr)
+	if err != nil {
+		return err
+	}
+
+	j, err := snapJournal.Connect(rbdSnap.Monitors, rbdSnap.RadosNamespace, cr)
+	if err != nil {
+		return err
+	}
+	defer j.Destroy()
+
+	kmsID, encryptionType := getEncryptionConfig(rbdVol)
+
+	rbdSnap.ReservedID, rbdSnap.RbdSnapName, err = j.ReserveName(
+		ctx, rbdSnap.JournalPool, journalPoolID, rbdSnap.Pool, imagePoolID,
+		rbdSnap.RequestName, rbdSnap.NamePrefix, rbdVol.RbdImageName, kmsID, rbdSnap.ReservedID, rbdVol.Owner,
+		"", encryptionType)
+	if err != nil {
+		return err
+	}
+
+	rbdSnap.VolID, err = util.GenerateVolID(ctx, rbdSnap.Monitors, cr, imagePoolID, rbdSnap.Pool,
+		rbdSnap.ClusterID, rbdSnap.ReservedID, volIDVersion)
+	if err != nil {
+		return err
+	}
+
+	log.DebugLog(ctx, "generated Volume ID (%s) and image name (%s) for request name (%s)",
+		rbdSnap.VolID, rbdSnap.RbdSnapName, rbdSnap.RequestName)
+
+	return nil
+}
+
 var (
 	// rbdHardMaxCloneDepth is the hard limit for maximum number of nested volume clones that are taken before flatten
 	// occurs.
-	rbdHardMaxCloneDepth uint
+	rbdHardMaxCloneDepth uint = 4
 
 	// rbdSoftMaxCloneDepth is the soft limit for maximum number of nested volume clones that are taken before flatten
 	// occurs.
-	rbdSoftMaxCloneDepth uint
+	rbdSoftMaxCloneDepth uint = 8
 )
 
 //func createRBDClone(

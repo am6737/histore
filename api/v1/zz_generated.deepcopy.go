@@ -23,7 +23,7 @@ package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	runtime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	corev1 "kubevirt.io/api/core/v1"
 )
@@ -48,6 +48,22 @@ func (in *BackupSpec) DeepCopyInto(out *BackupSpec) {
 	}
 	if in.OrLabelSelectors != nil {
 		in, out := &in.OrLabelSelectors, &out.OrLabelSelectors
+		*out = make([]*metav1.LabelSelector, len(*in))
+		for i := range *in {
+			if (*in)[i] != nil {
+				in, out := &(*in)[i], &(*out)[i]
+				*out = new(metav1.LabelSelector)
+				(*in).DeepCopyInto(*out)
+			}
+		}
+	}
+	if in.ExcludedLabelSelector != nil {
+		in, out := &in.ExcludedLabelSelector, &out.ExcludedLabelSelector
+		*out = new(metav1.LabelSelector)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.ExcludedOrLabelSelectors != nil {
+		in, out := &in.ExcludedOrLabelSelectors, &out.ExcludedOrLabelSelectors
 		*out = make([]*metav1.LabelSelector, len(*in))
 		for i := range *in {
 			if (*in)[i] != nil {
@@ -415,6 +431,11 @@ func (in *VirtualMachineRestoreStatus) DeepCopyInto(out *VirtualMachineRestoreSt
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
+	}
+	if in.Error != nil {
+		in, out := &in.Error, &out.Error
+		*out = new(Error)
+		(*in).DeepCopyInto(*out)
 	}
 }
 

@@ -5488,6 +5488,8 @@ spec:
                       type: boolean
                     slaveVolumeHandle:
                       type: string
+                    snapshotVolumeHandle:
+                      type: string
                     volumeName:
                       type: string
                   type: object

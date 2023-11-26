@@ -12,10 +12,25 @@ spec:
     kind: VirtualMachineRestore
     listKind: VirtualMachineRestoreList
     plural: virtualmachinerestores
+    shortNames:
+    - hvmr
     singular: virtualmachinerestore
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.target.name
+      name: TargetName
+      type: string
+    - jsonPath: .status.complete
+      name: Complete
+      type: boolean
+    - jsonPath: .status.restoreTime
+      name: RestoreTime
+      type: string
+    - jsonPath: .status.error
+      name: Error
+      type: string
+    name: v1
     schema:
       openAPIV3Schema:
         description: VirtualMachineRestore is the Schema for the virtualmachinerestores
@@ -98,6 +113,15 @@ spec:
                 items:
                   type: string
                 type: array
+              error:
+                description: Error is the last error encountered during the snapshot/restore
+                properties:
+                  message:
+                    type: string
+                  time:
+                    format: date-time
+                    type: string
+                type: object
               restoreTime:
                 format: date-time
                 type: string

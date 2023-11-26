@@ -78,6 +78,7 @@ const (
 	VolumeDemote
 	VolumePromote
 	DisableReplication
+	SnapshotCreation
 	Complete
 )
 
@@ -94,7 +95,6 @@ type VirtualMachineSnapshotContentStatus struct {
 	Error *Error `json:"error,omitempty"`
 
 	// +optional
-	// +nullable
 	VolumeStatus []VolumeStatus `json:"volumeStatus,omitempty"`
 }
 
@@ -105,6 +105,9 @@ type VolumeStatus struct {
 
 	// +optional
 	SlaveVolumeHandle string `json:"slaveVolumeHandle,omitempty"`
+
+	// +optional
+	SnapshotVolumeHandle string `json:"snapshotVolumeHandle,omitempty"`
 
 	// +optional
 	VolumeName string `json:"volumeName,omitempty"`

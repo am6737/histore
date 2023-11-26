@@ -27,6 +27,9 @@ const (
 
 	restoreCompleteEvent = "VirtualMachineRestoreComplete"
 
+	deletionSecretName      = "volume.kubernetes.io/provisioner-deletion-secret-name"
+	deletionSecretNamespace = "volume.kubernetes.io/provisioner-deletion-secret-namespace"
+
 	restoreErrorEvent = "VirtualMachineRestoreError"
 
 	restoreDataVolumeCreateErrorEvent = "RestoreDataVolumeCreateError"
@@ -431,7 +434,9 @@ func (t *vmRestoreTarget) createDataVolume(dvt kubevirtv1.DataVolumeTemplateSpec
 	}
 	newDataVolume.Annotations[restoreNameAnnotation] = t.vmRestore.Name
 	newDataVolume.Namespace = corev1.NamespaceDefault
-	newDataVolume.Spec.Storage.StorageClassName = &config.DC.SlaveStorageClass
+	if newDataVolume.Spec.Storage != nil {
+		newDataVolume.Spec.Storage.StorageClassName = &config.DC.SlaveStorageClass
+	}
 
 	//dump.Println("newDataVolume => ", newDataVolume)
 
@@ -439,10 +444,6 @@ func (t *vmRestoreTarget) createDataVolume(dvt kubevirtv1.DataVolumeTemplateSpec
 		return false, fmt.Errorf("failed to create restore DataVolume: %v", err)
 	}
 
-	//if _, err = t.controller.Client.CdiClient().CdiV1beta1().DataVolumes(t.vm.Namespace).Create(context.Background(), newDataVolume, v1.CreateOptions{}); err != nil {
-	//	t.controller.Recorder.Eventf(t.vm, corev1.EventTypeWarning, restoreDataVolumeCreateErrorEvent, "Error creating restore DataVolume %s: %v", newDataVolume.Name, err)
-	//	return false, fmt.Errorf("Failed to create restore DataVolume: %v", err)
-	//}
 	// Update restore DataVolumeName
 	for _, v := range t.vm.Spec.Template.Spec.Volumes {
 		if v.DataVolume == nil || v.DataVolume.Name != dvt.Name {
