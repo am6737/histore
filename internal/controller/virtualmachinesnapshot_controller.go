@@ -205,6 +205,9 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 	if err != nil {
 		return err
 	}
+	if vm == nil {
+		return fmt.Errorf("virtual machine %s not found", vmSnapshot.Spec.Source.Name)
+	}
 
 	var volumeBackups []hitoseacomv1.VolumeBackup
 	pvcs := GetPVCsFromVolumes(vm.Spec.Template.Spec.Volumes)

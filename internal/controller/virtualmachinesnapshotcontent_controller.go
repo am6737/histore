@@ -114,9 +114,8 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		}
 		for _, v := range content.Spec.VolumeBackups {
 			content.Status.VolumeStatus = append(content.Status.VolumeStatus, hitoseacomv1.VolumeStatus{
-				VolumeName: v.VolumeName,
-				Phase:      hitoseacomv1.WaitForCreation,
 				ReadyToUse: &f,
+				VolumeName: v.VolumeName,
 			})
 		}
 		return reconcile.Result{
@@ -125,10 +124,10 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 	}
 
 	if vmSnapshotContentDeleting(content) {
-		//if err := r.volumeDeleteHandler(content); err != nil {
-		//	logger.Error(err, "volume deleteHandle")
-		//	return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
-		//}
+		if err := r.volumeDeleteHandler(content); err != nil {
+			logger.Error(err, "volume deleteHandle")
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+		}
 		if err := r.removeFinalizerFromVmsc(content); err != nil {
 			logger.Error(err, "Failed to remove VirtualMachineSnapshotContent finalizer")
 			return ctrl.Result{Requeue: true}, nil
@@ -199,7 +198,6 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 
 	//// 更新 ReadyToUse 状态
 	updateReadyToUseStatus := func() error {
-		startTime := time.Now() // 记录开始时间
 
 		newContent := &hitoseacomv1.VirtualMachineSnapshotContent{}
 		if err := r.Get(ctx, req.NamespacedName, newContent); err != nil {
@@ -238,8 +236,6 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 			}
 		}
 
-		elapsedTime := time.Since(startTime) // 计算时间差
-		fmt.Println("updateReadyToUseStatus Elapsed time:", elapsedTime)
 		return nil
 	}
 
@@ -364,11 +360,14 @@ func (r *VirtualMachineSnapshotContentReconciler) volumeDeleteHandler(content *h
 
 	for _, v := range content.Status.VolumeStatus {
 		r.Log.Info("volume deleting", "volumeHandle", v.SlaveVolumeHandle)
-		if v.CreationTime == nil {
+		if v.CreationTime == nil || v.SlaveVolumeHandle == "" {
 			return nil
 		}
 		if !*v.ReadyToUse {
 			masterVolumeHandle := getSlaveVolumeHandle(v.SlaveVolumeHandle, msc.ClusterID)
+			if masterVolumeHandle == "" {
+				return nil
+			}
 			if err = r.DeleteVolumeSnapshot(context.Background(), masterVolumeHandle, masterSecret, map[string]string{}); err != nil {
 				if errors.Is(err, librbd.ErrNotFound) {
 					r.Log.Info(fmt.Sprintf("master source Volume ID %s not found", masterVolumeHandle))
@@ -549,6 +548,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 	} else {
 		status = content.Status.VolumeStatus[index]
 	}
+
 	//if content.Status.VolumeStatus[index].ReadyToUse == true {
 	//	return false, nil
 	//}
@@ -599,46 +599,41 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 				if strings.Contains(err.Error(), "Device or resource busy") {
 					return false, nil
 				}
-				r.Log.Error(err, "Master image enabled rbd failed")
+				r.Log.Error(err, "Master image enabled failed")
 				return false, err
 			}
-			r.Log.Info("Master image enabled successfully", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+			r.Log.Info("Master image enabled successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			if err == wait.ErrWaitTimeout {
-				// todo 超时处理
-				fmt.Println("Operation timed out")
-				return err
+				return fmt.Errorf("timeout occurred while enabling master image")
 			}
 			return err
 		}
-		return r.updateVolumeStatus(ctx, content, hitoseacomv1.VolumeStatus{
-			VolumeName: volumeBackup.VolumeName,
-			Phase:      hitoseacomv1.VolumeDemote,
-		})
+		status.Phase = hitoseacomv1.VolumeDemote
+		return r.updateVolumeStatus(ctx, content, status)
 	}
 
 	DemoteImageHandler := func(rbdVol *rbd.RbdVolume) error {
+		status.Phase = hitoseacomv1.VolumePromote
+
 		state, err := rbdVol.GetImageMirroringInfo()
 		if err != nil {
 			return err
 		}
 		if !state.Primary {
-			return r.updateVolumeStatus(ctx, content, hitoseacomv1.VolumeStatus{
-				VolumeName: volumeBackup.VolumeName,
-				Phase:      hitoseacomv1.VolumePromote,
-			})
+			return r.updateVolumeStatus(ctx, content, status)
 		}
-		//r.Log.Info("Wait master RBD image demote  ", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+		//r.Log.Info("Wait master RBD image demote  ", "ikey, fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.DemoteImage(); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
 					return false, nil
 				}
-				r.Log.Error(err, "demote master rbd failed")
+				r.Log.Error(err, "demote master image failed")
 				return false, err
 			}
-			r.Log.Info("Master image demote successfully", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+			r.Log.Info("Master image demote successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			if err == wait.ErrWaitTimeout {
@@ -648,63 +643,52 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 			}
 			return err
 		}
-		return r.updateVolumeStatus(ctx, content, hitoseacomv1.VolumeStatus{
-			VolumeName: volumeBackup.VolumeName,
-			Phase:      hitoseacomv1.VolumePromote,
-		})
+		return r.updateVolumeStatus(ctx, content, status)
 	}
 
 	PromoteImageHandler := func(rbdVol *rbd.RbdVolume) error {
+		status.Phase = hitoseacomv1.DisableReplication
+
 		state, err := rbdVol.GetImageMirroringInfo()
 		if err != nil {
 			return err
 		}
 		if state.Primary {
-			return r.updateVolumeStatus(ctx, content, hitoseacomv1.VolumeStatus{
-				VolumeName: volumeBackup.VolumeName,
-				Phase:      hitoseacomv1.DisableReplication,
-			})
+			return r.updateVolumeStatus(ctx, content, status)
 		}
-		r.Log.Info("Wait slave RBD image promote  ", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+		r.Log.Info("Wait slave image promote", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.PromoteImage(false); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
 					return false, nil
 				}
-				r.Log.Error(err, "Promote slave rbd failed")
+				r.Log.Error(err, "Promote slave image failed")
 				return false, err
 			}
-			r.Log.Info("Slave image promote successfully", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+			r.Log.Info("Slave image promote successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			return err
 		}
-		return r.updateVolumeStatus(ctx, content, hitoseacomv1.VolumeStatus{
-			VolumeName: volumeBackup.VolumeName,
-			Phase:      hitoseacomv1.DisableReplication,
-		})
+		return r.updateVolumeStatus(ctx, content, status)
 	}
 
 	DisableImageHandler := func(rbdVol *rbd.RbdVolume) error {
+		status.Phase = hitoseacomv1.SnapshotCreation
+
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.DisableImageMirroring(false); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
 					return false, nil
 				}
-				r.Log.Error(err, "Disable slave rbd image failed")
+				r.Log.Error(err, "Disable slave image image failed")
 			}
-			r.Log.Info("Slave image disable successfully", "image", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+			r.Log.Info("Slave image disable successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			return err
 		}
-		if err = r.updateVolumeStatus(ctx, content, hitoseacomv1.VolumeStatus{
-			VolumeName: volumeBackup.VolumeName,
-			Phase:      hitoseacomv1.SnapshotCreation,
-		}); err != nil {
-			return err
-		}
-		return nil
+		return r.updateVolumeStatus(ctx, content, status)
 	}
 
 	var (
@@ -745,8 +729,6 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 			}
 		}()
 
-		slaveVolumeHandle = volumeId
-
 		r.Log.Info(fmt.Sprintf("Waiting for volume flatten"), "volumeId", volumeId)
 
 		if err = r.WaitFlattenCompleted(ctx, volumeId, masterCr, masterSecret, 5*time.Minute); err != nil {
@@ -757,13 +739,13 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 
 		r.Log.Info(fmt.Sprintf("Volume flatten successfully"), "volumeId", volumeId)
 
-		if err = r.updateVolumeStatus(ctx, content, hitoseacomv1.VolumeStatus{
-			CreationTime:       currentTime(),
-			VolumeName:         volumeBackup.VolumeName,
-			Phase:              hitoseacomv1.EnableReplication,
-			SlaveVolumeHandle:  slaveVolumeHandle,
-			MasterVolumeHandle: masterVolumeHandle,
-		}); err != nil {
+		slaveVolumeHandle = volumeId
+		status.CreationTime = currentTime()
+		status.Phase = hitoseacomv1.EnableReplication
+		status.SlaveVolumeHandle = slaveVolumeHandle
+		status.MasterVolumeHandle = masterVolumeHandle
+
+		if err = r.updateVolumeStatus(ctx, content, status); err != nil {
 			deleteClone = true
 			r.Log.Error(err, "WaitForCreation updateVolumeStatus")
 			return "", err
@@ -781,29 +763,17 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 		phase++
 	}
 
-	if phase <= hitoseacomv1.DisableReplication && cloneRbd == nil {
-		if slaveVolumeHandle == "" {
-			slaveVolumeHandle = status.SlaveVolumeHandle
-		}
+	if slaveVolumeHandle == "" {
+		slaveVolumeHandle = status.SlaveVolumeHandle
+	}
 
+	if phase <= hitoseacomv1.DisableReplication && cloneRbd == nil {
 		cloneRbd, err = rbd.GenVolFromVolID(ctx, slaveVolumeHandle, masterCr, masterSecret)
 		if err != nil {
 			r.Log.Error(err, "GenVolFromVolID")
 			return false, err
 		}
 		defer cloneRbd.Destroy()
-		//
-		//rbdSnap := &rbd.RbdSnapshot{}
-		//if err = rbd.GenSnapFromSnapID(ctx, rbdSnap, slaveVolumeHandle, masterCr, masterSecret); err != nil {
-		//	r.Log.Error(err, "GenSnapFromSnapID")
-		//	return false, err
-		//}
-		//cloneRbd = rbd.GenerateVolFromSnap(rbdSnap)
-		//if err = cloneRbd.Connect(masterCr); err != nil {
-		//	r.Log.Error(err, "rbd Connect")
-		//	return false, err
-		//}
-		//defer cloneRbd.Destroy()
 	}
 
 	if phase == hitoseacomv1.EnableReplication {
@@ -815,8 +785,6 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 	}
 
 	if phase != hitoseacomv1.Complete {
-		slaveVolumeHandle = status.SlaveVolumeHandle
-
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			slaveVolumeHandle = getSlaveVolumeHandle(slaveVolumeHandle, ssc.ClusterID)
 			if config.SlavePoolID != 0 {
@@ -858,29 +826,28 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 			if err != nil {
 				return false, err
 			}
-			//snapshotId := GetCloneVolumeHandleFromVolumeHandle(slaveVolumeHandle, uuid.New().String())
-			if err = r.updateVolumeStatus(ctx, content, hitoseacomv1.VolumeStatus{
-				VolumeName:           volumeBackup.VolumeName,
-				Phase:                hitoseacomv1.Complete,
-				SnapshotVolumeHandle: snap.SnapshotId,
-			}); err != nil {
+
+			status.SnapshotVolumeHandle = snap.SnapshotId
+			status.Phase = hitoseacomv1.Complete
+			if err = r.updateVolumeStatus(ctx, content, status); err != nil {
 				r.Log.Error(err, "updateVolumeStatus SnapshotCreation")
 				return false, err
 			}
 			fallthrough
 		case hitoseacomv1.Complete:
-			slaveVolumeHandle = status.SlaveVolumeHandle
+			if slaveVolumeHandle == "" {
+				slaveVolumeHandle = status.SlaveVolumeHandle
+			}
 			slaveVolumeHandle = getSlaveVolumeHandle(slaveVolumeHandle, ssc.ClusterID)
 			if config.SlavePoolID != 0 {
 				slaveVolumeHandle = replacePool(slaveVolumeHandle, config.SlavePoolID)
 			}
+
 			t := true
-			if err = r.updateVolumeStatus(ctx, content, hitoseacomv1.VolumeStatus{
-				VolumeName:        volumeBackup.VolumeName,
-				Phase:             hitoseacomv1.Complete,
-				SlaveVolumeHandle: slaveVolumeHandle,
-				ReadyToUse:        &t,
-			}); err != nil {
+			status.Phase = hitoseacomv1.Complete
+			status.ReadyToUse = &t
+			status.SlaveVolumeHandle = slaveVolumeHandle
+			if err = r.updateVolumeStatus(ctx, content, status); err != nil {
 				r.Log.Error(err, "updateVolumeStatus Complete")
 				return false, err
 			}

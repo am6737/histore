@@ -437,6 +437,9 @@ func (t *vmRestoreTarget) createDataVolume(dvt kubevirtv1.DataVolumeTemplateSpec
 	if newDataVolume.Spec.Storage != nil {
 		newDataVolume.Spec.Storage.StorageClassName = &config.DC.SlaveStorageClass
 	}
+	if newDataVolume.Spec.PVC.StorageClassName != nil {
+		newDataVolume.Spec.PVC.StorageClassName = &config.DC.SlaveStorageClass
+	}
 
 	//dump.Println("newDataVolume => ", newDataVolume)
 
