@@ -55,8 +55,7 @@ func HasFinalizer(object metav1.Object, finalizer string) bool {
 }
 
 // addFinalizerToVR adds the VR finalizer on the VolumeReplication instance.
-func (r *VirtualMachineSnapshotReconciler) addFinalizerToVms(vms *hitoseacomv1.VirtualMachineSnapshot,
-) error {
+func (r *VirtualMachineSnapshotReconciler) addFinalizerToVms(vms *hitoseacomv1.VirtualMachineSnapshot) error {
 	if !contains(vms.ObjectMeta.Finalizers, vmSnapshotFinalizer) {
 		r.Log.Info("adding finalizer to VirtualMachineSnapshot object", "Finalizer", vmSnapshotFinalizer)
 		vms.ObjectMeta.Finalizers = append(vms.ObjectMeta.Finalizers, vmSnapshotFinalizer)

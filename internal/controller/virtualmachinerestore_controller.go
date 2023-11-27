@@ -506,7 +506,7 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(
 		return err
 	}
 
-	r.Log.Info("restore pv created successfully ", "namespace", pv.Namespace, "name", pv.Name)
+	r.Log.Info("restore pv created successfully", "namespace", pv.Namespace, "name", pv.Name)
 
 	pvc.Spec.VolumeName = pv.Name
 	// pvc Binding pv
