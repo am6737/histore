@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"time"
 
@@ -102,9 +103,14 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 	if vmSnapshotDeleting(vmSnapshot) {
 		if err := r.removeFinalizerFromVms(vmSnapshot); err != nil {
 			logger.Error(err, "Failed to remove VirtualMachineSnapshot finalizer")
-			return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 		return reconcile.Result{}, nil
+	} else {
+		if err := r.addFinalizerToVms(vmSnapshot); err != nil {
+			logger.Error(err, "Failed to add VirtualMachineSnapshot finalizer")
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+		}
 	}
 
 	content, err := r.getContent(vmSnapshot)
@@ -152,7 +158,7 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 	if err = r.updateSnapshotStatus(vmSnapshot); err != nil {
 		r.Log.Error(err, "updateSnapshotStatus")
 		return ctrl.Result{
-			RequeueAfter: 15 * time.Second,
+			RequeueAfter: 5 * time.Second,
 		}, nil
 	}
 
@@ -198,6 +204,9 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 	vm, err := r.getVM(vmSnapshot)
 	if err != nil {
 		return err
+	}
+	if vm == nil {
+		return fmt.Errorf("virtual machine %s not found", vmSnapshot.Spec.Source.Name)
 	}
 
 	var volumeBackups []hitoseacomv1.VolumeBackup
@@ -485,17 +494,12 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		// or after waiting until the content is deleted if needed
 		if !vmSnapshotProgressing(vmSnapshot) || contentDeletedIfNeeded(vmSnapshotCpy, content) {
 			//RemoveFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
+			time.Sleep(5 * time.Second)
 			if err = r.removeFinalizerFromVms(vmSnapshotCpy); err != nil {
 				return err
 			}
 		}
 	} else {
-		// since no status subresource can update metadata and status
-		defer func(r *VirtualMachineSnapshotReconciler, vms *hitoseacomv1.VirtualMachineSnapshot) {
-			if err := r.addFinalizerToVms(vms); err != nil {
-				r.Log.Error(err, "addFinalizerToVms")
-			}
-		}(r, vmSnapshotCpy)
 		//AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
 		if content != nil && content.Status != nil {
 			// content exists and is initialized
@@ -532,15 +536,28 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionUnknown, "Unknown state"))
 	}
 
-	//if !equality.Semantic.DeepEqual(vmSnapshot, vmSnapshotCpy) {
-	//	return r.Update(context.Background(), vmSnapshotCpy)
-	//}
+	//return r.Status().Update(context.Background(), vmSnapshotCpy)
 
-	return r.Status().Update(context.Background(), vmSnapshotCpy)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		ctx := context.Background()
+		var newVmSnapshot hitoseacomv1.VirtualMachineSnapshot
+		if err = r.Client.Get(ctx, client.ObjectKey{
+			Namespace: vmSnapshotCpy.Namespace,
+			Name:      vmSnapshotCpy.Name,
+		}, &newVmSnapshot); err != nil {
+			return err
+		}
+		newVmSnapshot.Status = vmSnapshotCpy.Status
+		if err = r.Client.Status().Update(ctx, &newVmSnapshot); err != nil {
+			return fmt.Errorf("failed to update resource status: %w", err)
+		}
+
+		return nil
+	})
 }
 
-func contentDeletedIfNeeded(cpy *hitoseacomv1.VirtualMachineSnapshot, content *hitoseacomv1.VirtualMachineSnapshotContent) bool {
-	return false
+func contentDeletedIfNeeded(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot, content *hitoseacomv1.VirtualMachineSnapshotContent) bool {
+	return content == nil || !shouldDeleteContent(vmSnapshot, content)
 }
 
 func GetPVCsFromVolumes(volumes []kubevirtv1.Volume) map[string]string {

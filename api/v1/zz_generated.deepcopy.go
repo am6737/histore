@@ -764,6 +764,11 @@ func (in *VolumeStatus) DeepCopyInto(out *VolumeStatus) {
 		in, out := &in.CreationTime, &out.CreationTime
 		*out = (*in).DeepCopy()
 	}
+	if in.ReadyToUse != nil {
+		in, out := &in.ReadyToUse, &out.ReadyToUse
+		*out = new(bool)
+		**out = **in
+	}
 	if in.Error != nil {
 		in, out := &in.Error, &out.Error
 		*out = new(Error)

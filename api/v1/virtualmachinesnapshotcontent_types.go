@@ -120,7 +120,7 @@ type VolumeStatus struct {
 	CreationTime *metav1.Time `json:"creationTime,omitempty"`
 
 	// +optional
-	ReadyToUse bool `json:"readyToUse,omitempty"`
+	ReadyToUse *bool `json:"readyToUse,omitempty"`
 
 	// +optional
 	Error *Error `json:"error,omitempty"`

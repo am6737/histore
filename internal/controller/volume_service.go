@@ -25,54 +25,11 @@ type VolumeService struct {
 	Log    logr.Logger
 }
 
-func checkContentSource(
-	ctx context.Context,
-	req *CreateVolumeRequest,
-	cr *util.Credentials,
-) (*rbd.RbdVolume, *rbd.RbdSnapshot, error) {
-	if req.VolumeContentSource == "" {
-		return nil, nil, nil
-	}
-	volumeSource := req.VolumeContentSource
-	switch volumeSource {
-	case VolumeContentSourceSnapshot:
-		snapshotID := req.VolumeId
-		if snapshotID == "" {
-			return nil, nil, status.Errorf(codes.NotFound, "volume Snapshot ID cannot be empty")
-		}
-		rbdSnap := &rbd.RbdSnapshot{}
-		if err := rbd.GenSnapFromSnapID(ctx, rbdSnap, snapshotID, cr, req.SlaveSecrets); err != nil {
-			log.ErrorLog(ctx, "failed to get backend snapshot for %s: %v", snapshotID, err)
-			if !errors.Is(err, ErrSnapNotFound) {
-				return nil, nil, status.Error(codes.Internal, err.Error())
-			}
-
-			return nil, nil, status.Errorf(codes.NotFound, "%s snapshot does not exist", snapshotID)
-		}
-
-		return nil, rbdSnap, nil
-	case VolumeContentSourceVolume:
-		volID := req.VolumeId
-		if volID == "" {
-			return nil, nil, status.Errorf(codes.NotFound, "volume ID cannot be empty")
-		}
-		rbdvol, err := rbd.GenVolFromVolID(ctx, volID, cr, req.MaterSecrets)
-		if err != nil {
-			log.ErrorLog(ctx, "failed to get backend image for %s: %v", volID, err)
-			if !errors.Is(err, ErrImageNotFound) {
-				return nil, nil, status.Error(codes.Internal, err.Error())
-			}
-
-			return nil, nil, status.Errorf(codes.NotFound, "%s image does not exist", volID)
-		}
-
-		return rbdvol, nil, nil
-	}
-
-	return nil, nil, status.Errorf(codes.InvalidArgument, "not a proper volume source")
-}
-
 func (v *VolumeService) RestoreSnapshot(ctx context.Context, req *RestoreSnapshotRequest) (*RestoreSnapshotResponse, error) {
+
+	if err := v.validateRestoreReq(ctx, req); err != nil {
+		return nil, err
+	}
 
 	cr, err := util.NewUserCredentials(req.Secrets)
 	if err != nil {
@@ -105,6 +62,10 @@ func (v *VolumeService) RestoreSnapshot(ctx context.Context, req *RestoreSnapsho
 
 func (v *VolumeService) CreateVolume(ctx context.Context, req *CreateVolumeRequest) (*CreateVolumeResponse, error) {
 
+	if err := v.validateVolumeReq(ctx, req); err != nil {
+		return nil, err
+	}
+
 	masterSecret := req.MaterSecrets
 	SlaveSecrets := req.SlaveSecrets
 
@@ -122,15 +83,13 @@ func (v *VolumeService) CreateVolume(ctx context.Context, req *CreateVolumeReque
 	}
 	defer slaveCr.DeleteCredentials()
 
-	var (
-		masterRbd = &rbd.RbdVolume{}
-	)
+	var masterRbd = &rbd.RbdVolume{}
+
 	masterVolumeHandle := req.VolumeId
 
 	masterRbd, err = rbd.GenVolFromVolID(ctx, masterVolumeHandle, masterCr, masterSecret)
 	if err != nil {
 		if errors.Is(err, librbd.ErrNotFound) {
-			//log.DebugLog(ctx, "image %s encrypted state not set", ri)
 			v.Log.Info(fmt.Sprintf("master source Volume ID %s not found", masterVolumeHandle))
 			return nil, err
 		}
@@ -210,12 +169,6 @@ func (v *VolumeService) DeleteVolume(ctx context.Context, req *DeleteVolumeReque
 	}
 	defer rbdVol.Destroy()
 
-	//rbdVol, err := rbd.GenVolFromVolID(ctx, volumeID, cr, secrets)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//defer rbdVol.Destroy()
-
 	_, err = rbd.CleanupRBDImage(ctx, rbdVol, cr)
 	if err != nil {
 		return nil, err
@@ -226,9 +179,9 @@ func (v *VolumeService) DeleteVolume(ctx context.Context, req *DeleteVolumeReque
 
 func (v *VolumeService) CreateSnapshot(ctx context.Context, req *CreateSnapshotRequest) (*CreateSnapshotResponse, error) {
 
-	//if err := v.validateSnapshotReq(ctx, req); err != nil {
-	//	return nil, err
-	//}
+	if err := v.validateSnapshotReq(ctx, req); err != nil {
+		return nil, err
+	}
 
 	secrets := req.Secrets
 
@@ -363,4 +316,73 @@ func (v *VolumeService) DeleteSnapshot(ctx context.Context, req *DeleteSnapshotR
 	}
 
 	return &DeleteSnapshotResponse{}, nil
+}
+
+func (*VolumeService) validateVolumeReq(ctx context.Context, req *CreateVolumeRequest) error {
+	// Check sanity of request Name, Volume Capabilities
+	if req.Name == "" {
+		return status.Error(codes.InvalidArgument, "volume Name cannot be empty")
+	}
+	if req.VolumeId == "" {
+		return status.Error(codes.InvalidArgument, "source Volume ID cannot be empty")
+	}
+	options := req.Parameters
+	if value, ok := options["clusterID"]; !ok || value == "" {
+		return status.Error(codes.InvalidArgument, "missing or empty cluster ID to provision volume from")
+	}
+	if value, ok := options["pool"]; !ok || value == "" {
+		return status.Error(codes.InvalidArgument, "missing or empty pool name to provision volume from")
+	}
+
+	if value, ok := options["dataPool"]; ok && value == "" {
+		return status.Error(codes.InvalidArgument, "empty datapool name to provision volume from")
+	}
+	if value, ok := options["radosNamespace"]; ok && value == "" {
+		return status.Error(codes.InvalidArgument, "empty namespace name to provision volume from")
+	}
+	if value, ok := options["volumeNamePrefix"]; ok && value == "" {
+		return status.Error(codes.InvalidArgument, "empty volume name prefix to provision volume from")
+	}
+
+	return nil
+}
+
+func (v *VolumeService) validateSnapshotReq(ctx context.Context, req *CreateSnapshotRequest) error {
+	// Check sanity of request Snapshot Name, Source Volume Id
+	if req.Name == "" {
+		return status.Error(codes.InvalidArgument, "snapshot Name cannot be empty")
+	}
+	if req.SourceVolumeId == "" {
+		return status.Error(codes.InvalidArgument, "source Volume ID cannot be empty")
+	}
+
+	options := req.Parameters
+	if value, ok := options["snapshotNamePrefix"]; ok && value == "" {
+		return status.Error(codes.InvalidArgument, "empty snapshot name prefix to provision snapshot from")
+	}
+	if value, ok := options["pool"]; ok && value == "" {
+		return status.Error(codes.InvalidArgument, "empty pool name in which rbd image will be created")
+	}
+
+	return nil
+}
+
+func (v *VolumeService) validateRestoreReq(ctx context.Context, req *RestoreSnapshotRequest) error {
+	// Check sanity of request Snapshot Name, Source Volume Id
+	if req.VolumeId == "" {
+		return status.Error(codes.InvalidArgument, "Volume ID cannot be empty")
+	}
+	if req.SourceVolumeId == "" {
+		return status.Error(codes.InvalidArgument, "source Volume ID cannot be empty")
+	}
+
+	options := req.Parameters
+	if value, ok := options["snapshotNamePrefix"]; ok && value == "" {
+		return status.Error(codes.InvalidArgument, "empty snapshot name prefix to provision snapshot from")
+	}
+	if value, ok := options["pool"]; ok && value == "" {
+		return status.Error(codes.InvalidArgument, "empty pool name in which rbd image will be created")
+	}
+
+	return nil
 }

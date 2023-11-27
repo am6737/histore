@@ -70,7 +70,7 @@ spec:
         - /manager
         args:
         - --leader-elect
-        image: hub.hitosea.com/csiaddons/histore:latest
+        image: hub.hitosea.com/csiaddons/histore:dev
         name: manager
         imagePullPolicy: Always
         securityContext:
