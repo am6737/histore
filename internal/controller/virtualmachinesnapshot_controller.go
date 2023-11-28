@@ -65,6 +65,7 @@ type VirtualMachineSnapshotReconciler struct {
 //+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachineinstances,verbs=get;list;watch
 //+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachineinstances/status,verbs=get
 //+kubebuilder:rbac:groups=cdi.kubevirt.io,resources=datavolumes,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=cdi.kubevirt.io,resources=datasources,verbs=get;list;watch
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots/status,verbs=get
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch
@@ -324,15 +325,12 @@ func (r *VirtualMachineSnapshotReconciler) getSnapshotPVC(namespace, volumeName 
 		r.Log.Error(err, "No snapshot storage class for PVC", pvc.Namespace, pvc.Name)
 		return nil, err
 	}
-	//
-	//if volumeSnapshotClass == "" {
-	//	r.Log.Info("No snapshot storage class for PVC", pvc.Namespace, pvc.Name)
-	//	return pvc, nil
-	//}
 
 	if volumeSnapshotClass != "" {
 		return pvc, nil
 	}
+
+	r.Log.Info("No snapshot storage class for PVC", pvc.Namespace, pvc.Name)
 
 	return nil, nil
 }
@@ -357,7 +355,7 @@ func (r *VirtualMachineSnapshotReconciler) getVolumeSnapshotClass(storageClassNa
 	}
 
 	if len(matches) == 0 {
-		log.Log.Info(fmt.Sprintf("No VolumeSnapshotClass for %s", storageClassName))
+		r.Log.Info(fmt.Sprintf("No VolumeSnapshotClass for %s", storageClassName))
 		return "", nil
 	}
 

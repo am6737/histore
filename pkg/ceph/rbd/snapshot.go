@@ -111,34 +111,33 @@ func CreateVolumeFromSnapshot(
 	// 4. 拷贝父卷的加密配置到克隆卷
 	err = parentVol.copyEncryptionConfig(&cloneRbd.rbdImage, false)
 	if err != nil {
-		return nil, err
+		return cloneRbd, fmt.Errorf("failed to copy encryption config for %q: %w", cloneRbd, err)
 	}
 
 	// 5. 获取克隆卷的ImageID
 	err = cloneRbd.getImageID()
 	if err != nil {
-		fmt.Println(err.Error() + "  cloneRbd.getImageID")
+		log.ErrorLog(ctx, "failed to get volume id %s: %v", cloneRbd, err)
 		return cloneRbd, err
 	}
 
 	// 6. 将ImageID保存到journal
 	j, err := snapJournal.Connect(cloneRbd.Monitors, cloneRbd.RadosNamespace, cr)
 	if err != nil {
-		fmt.Println(err.Error() + "  snapJournal.Connec")
+		log.ErrorLog(ctx, "failed to connect to cluster: %v", err)
 		return cloneRbd, err
 	}
 	defer j.Destroy()
 
 	err = j.StoreImageID(ctx, cloneRbd.JournalPool, cloneRbd.ReservedID, cloneRbd.ImageID)
 	if err != nil {
-		fmt.Println(err.Error() + " StoreImageID")
+		log.ErrorLog(ctx, "failed to reserve volume id: %v", err)
 		return cloneRbd, err
 	}
 
 	// 7. 扁平化RBD克隆
 	err = cloneRbd.flattenRbdImage(ctx, false, rbdHardMaxCloneDepth, rbdSoftMaxCloneDepth)
 	if err != nil {
-		fmt.Println(err.Error() + "  cloneRbd.flattenRbdImage")
 		return cloneRbd, err
 	}
 
