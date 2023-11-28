@@ -65,9 +65,9 @@ func (r *VirtualMachineRestoreReconciler) SetupWithManager(mgr ctrl.Manager) err
 		Complete(r)
 }
 
-//+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachinerestores,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachinerestores/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachinerestores/finalizers,verbs=update
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinerestores,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinerestores/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinerestores/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -578,7 +578,7 @@ func CreateRestoreStaticPVCDefFromVMRestore(vmRestoreName, storageClassName, res
 	}
 	pvc.Labels[restoreSourceNameLabel] = sourceVmName
 	pvc.Labels[restoreSourceNamespaceLabel] = sourceVmNamespace
-	pvc.Labels["hitosea.com/histore"] = "true"
+	pvc.Labels["snapshot.hitosea.com/histore"] = "true"
 	pvc.Annotations[restoreNameAnnotation] = vmRestoreName
 	return pvc
 }

@@ -12,7 +12,7 @@ metadata:
   name: virtualmachinesnapshot-editor-role
 rules:
 - apiGroups:
-  - hitosea.com
+  - snapshot.hitosea.com
   resources:
   - virtualmachinesnapshots
   verbs:
@@ -24,7 +24,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - hitosea.com
+  - snapshot.hitosea.com
   resources:
   - virtualmachinesnapshots/status
   verbs:

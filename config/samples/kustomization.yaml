@@ -1,7 +1,7 @@
 ## Append samples of your project ##
 resources:
-- _v1_virtualmachinesnapshot.yaml
-- _v1_virtualmachinerestore.yaml
-- _v1_virtualmachinesnapshotcontent.yaml
-- _v1_schedule.yaml
+- snapshot_v1_virtualmachinesnapshot.yaml
+- snapshot_v1_virtualmachinesnapshotcontent.yaml
+- snapshot_v1_virtualmachinerestore.yaml
+- snapshot_v1_schedule.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples
