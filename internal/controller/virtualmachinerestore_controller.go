@@ -134,14 +134,14 @@ func (r *VirtualMachineRestoreReconciler) Reconcile(ctx context.Context, req ctr
 	updated, err := r.reconcileVolumeRestores(vmRestoreOut, target)
 	if err != nil {
 		r.Log.Error(err, "reconciling VolumeRestores")
-		return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+		return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 	if updated {
 		//r.Log.Info("reconcileVolumeRestores updated")
 		updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Creating new PVCs"))
 		updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for new PVCs"))
 		return reconcile.Result{
-			RequeueAfter: 5 * time.Second,
+			RequeueAfter: 15 * time.Second,
 		}, r.doStatusUpdate(vmRestoreIn, vmRestoreOut)
 	}
 
@@ -292,7 +292,7 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 		if pvc == nil {
 			backup, err := getRestoreVolumeBackup(restore.VolumeName, content)
 			if err != nil {
-				log.Log.Error(err, "getRestoreVolumeBackup")
+				r.Log.Error(err, "getRestoreVolumeBackup")
 				return false, err
 			}
 			var slaveVolumeHandle, snapshotVolumeHandle string
@@ -311,14 +311,14 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 			}
 
 			if err = r.createRestorePVC(vmRestore, target, backup, &restore, content.Spec.Source.VirtualMachine.Name, content.Spec.Source.VirtualMachine.Namespace, slaveVolumeHandle, snapshotVolumeHandle); err != nil {
-				log.Log.Error(err, "createRestorePVC")
+				r.Log.Error(err, "createRestorePVC")
 				return false, err
 			}
 			createdPVC = true
 		} else if pvc.Status.Phase == corev1.ClaimPending {
 			bindingMode, err := r.getBindingMode(pvc)
 			if err != nil {
-				log.Log.Error(err, "getBindingMode")
+				r.Log.Error(err, "getBindingMode")
 				return false, err
 			}
 			if bindingMode == nil || *bindingMode == storagev1.VolumeBindingImmediate {

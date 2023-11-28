@@ -100,7 +100,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
-		logger.Error(err, "Unable to obtain VirtualMachineSnapshot object")
+		logger.Error(err, "unable to obtain VirtualMachineSnapshot object")
 		return ctrl.Result{}, err
 	}
 
@@ -129,13 +129,13 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 		if err := r.removeFinalizerFromVmsc(content); err != nil {
-			logger.Error(err, "Failed to remove VirtualMachineSnapshotContent finalizer")
+			logger.Error(err, "failed to remove VirtualMachineSnapshotContent finalizer")
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return ctrl.Result{}, nil
 	} else {
 		if err := r.addFinalizerToVmsc(content); err != nil {
-			logger.Error(err, "Failed to add VirtualMachineSnapshotContent finalizer")
+			logger.Error(err, "failed to add VirtualMachineSnapshotContent finalizer")
 			return ctrl.Result{Requeue: true}, nil
 		}
 	}
@@ -633,7 +633,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 				r.Log.Error(err, "demote master image failed")
 				return false, err
 			}
-			r.Log.Info("Master image demote successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+			r.Log.Info("master image demote successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			if err == wait.ErrWaitTimeout {
@@ -656,7 +656,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 		if state.Primary {
 			return r.updateVolumeStatus(ctx, content, status)
 		}
-		r.Log.Info("Wait slave image promote", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+		r.Log.Info("wait slave image promote", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 		if err = wait.PollImmediate(scheduleSyncPeriod, TTL, func() (done bool, err error) {
 			if err = rbdVol.PromoteImage(false); err != nil {
 				if strings.Contains(err.Error(), "Device or resource busy") {
@@ -665,7 +665,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 				r.Log.Error(err, "Promote slave image failed")
 				return false, err
 			}
-			r.Log.Info("Slave image promote successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+			r.Log.Info("slave image promote successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			return err
@@ -681,9 +681,9 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 				if strings.Contains(err.Error(), "Device or resource busy") {
 					return false, nil
 				}
-				r.Log.Error(err, "Disable slave image image failed")
+				r.Log.Error(err, "disable slave image image failed")
 			}
-			r.Log.Info("Slave image disable successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+			r.Log.Info("slave image disable successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 			return true, nil
 		}); err != nil {
 			return err
@@ -729,15 +729,15 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 			}
 		}()
 
-		r.Log.Info(fmt.Sprintf("Waiting for volume flatten"), "volumeId", volumeId)
+		r.Log.Info(fmt.Sprintf("waiting for volume flatten"), "volumeId", volumeId)
 
 		if err = r.WaitFlattenCompleted(ctx, volumeId, masterCr, masterSecret, 5*time.Minute); err != nil {
-			r.Log.Error(err, "Wait volume flatten timeout")
+			r.Log.Error(err, "wait volume flatten timeout")
 			deleteClone = true
 			return "", err
 		}
 
-		r.Log.Info(fmt.Sprintf("Volume flatten successfully"), "volumeId", volumeId)
+		r.Log.Info(fmt.Sprintf("volume flatten successfully"), "volumeId", volumeId)
 
 		slaveVolumeHandle = volumeId
 		status.CreationTime = currentTime()
@@ -747,7 +747,7 @@ func (r *VirtualMachineSnapshotContentReconciler) CreateVolume(ctx context.Conte
 
 		if err = r.updateVolumeStatus(ctx, content, status); err != nil {
 			deleteClone = true
-			r.Log.Error(err, "WaitForCreation updateVolumeStatus")
+			r.Log.Error(err, "waitForCreation updateVolumeStatus")
 			return "", err
 		}
 
