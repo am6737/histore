@@ -20,8 +20,8 @@ rules:
   - create
   - get
   - list
-  - watch
   - update
+  - watch
 - apiGroups:
   - ""
   resources:
@@ -51,6 +51,14 @@ rules:
 - apiGroups:
   - cdi.kubevirt.io
   resources:
+  - datasources
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cdi.kubevirt.io
+  resources:
   - datavolumes
   verbs:
   - create
@@ -58,126 +66,6 @@ rules:
   - get
   - list
   - watch
-- apiGroups:
-  - cdi.kubevirt.io
-  resources:
-  - datasources
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - hitosea.com
-  resources:
-  - schedules
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - hitosea.com
-  resources:
-  - schedules/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - hitosea.com
-  resources:
-  - schedules/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - hitosea.com
-  resources:
-  - virtualmachinerestores
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - hitosea.com
-  resources:
-  - virtualmachinerestores/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - hitosea.com
-  resources:
-  - virtualmachinerestores/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - hitosea.com
-  resources:
-  - virtualmachineschedulesnapshots/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - hitosea.com
-  resources:
-  - virtualmachinesnapshotcontents
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - hitosea.com
-  resources:
-  - virtualmachinesnapshotcontents/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - hitosea.com
-  resources:
-  - virtualmachinesnapshotcontents/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - hitosea.com
-  resources:
-  - virtualmachinesnapshots
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - hitosea.com
-  resources:
-  - virtualmachinesnapshots/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - hitosea.com
-  resources:
-  - virtualmachinesnapshots/status
-  verbs:
-  - get
-  - patch
-  - update
 - apiGroups:
   - kubevirt.io
   resources:
@@ -208,6 +96,118 @@ rules:
   - virtualmachines/status
   verbs:
   - get
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - schedules
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - schedules/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - schedules/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - virtualmachinerestores
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - virtualmachinerestores/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - virtualmachinerestores/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - virtualmachineschedulesnapshots/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - virtualmachinesnapshotcontents
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - virtualmachinesnapshotcontents/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - virtualmachinesnapshotcontents/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - virtualmachinesnapshots
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - virtualmachinesnapshots/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - virtualmachinesnapshots/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - snapshot.storage.k8s.io
   resources:

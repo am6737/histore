@@ -5,9 +5,9 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.11.3
   creationTimestamp: null
-  name: virtualmachinesnapshots.hitosea.com
+  name: virtualmachinesnapshots.snapshot.hitosea.com
 spec:
-  group: hitosea.com
+  group: snapshot.hitosea.com
   names:
     kind: VirtualMachineSnapshot
     listKind: VirtualMachineSnapshotList

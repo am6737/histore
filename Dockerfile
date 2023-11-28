@@ -40,19 +40,6 @@ RUN dnf -y install --nodocs \
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
 RUN CGO_ENABLED=1 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
 
-# Use distroless as minimal base image to package the manager binary
-# Refer to https://github.com/GoogleContainerTools/distroless for more details
-#FROM gcr.io/distroless/static:nonroot
-#FROM alpine:latest
-#WORKDIR /
-#COPY --from=builder /workspace/manager .
-#USER 65532:65532
-#
-## verify that all dynamically linked libraries are available
-##RUN [ $(ldd /usr/local/bin/manager | grep -c '=> not found') = '0' ]
-#
-#ENTRYPOINT ["/manager"]
-
 FROM debian:bullseye-slim
 RUN apt update && apt install wget gnupg -y
 RUN wget -q -O- 'https://download.ceph.com/keys/release.asc' | apt-key add -

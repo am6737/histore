@@ -2,26 +2,26 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/hitosea.com_virtualmachinesnapshots.yaml
-- bases/hitosea.com_virtualmachinerestores.yaml
-- bases/hitosea.com_virtualmachinesnapshotcontents.yaml
-- bases/hitosea.com_schedules.yaml
+- bases/snapshot.hitosea.com_virtualmachinesnapshots.yaml
+- bases/snapshot.hitosea.com_virtualmachinesnapshotcontents.yaml
+- bases/snapshot.hitosea.com_virtualmachinerestores.yaml
+- bases/snapshot.hitosea.com_schedules.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
 # patches here are for enabling the conversion webhook for each CRD
 #- patches/webhook_in_virtualmachinesnapshots.yaml
-#- patches/webhook_in_virtualmachinerestores.yaml
 #- patches/webhook_in_virtualmachinesnapshotcontents.yaml
+#- patches/webhook_in_virtualmachinerestores.yaml
 #- patches/webhook_in_schedules.yaml
 #+kubebuilder:scaffold:crdkustomizewebhookpatch
 
 # [CERTMANAGER] To enable cert-manager, uncomment all the sections with [CERTMANAGER] prefix.
 # patches here are for enabling the CA injection for each CRD
 #- patches/cainjection_in_virtualmachinesnapshots.yaml
-#- patches/cainjection_in_virtualmachinerestores.yaml
 #- patches/cainjection_in_virtualmachinesnapshotcontents.yaml
+#- patches/cainjection_in_virtualmachinerestores.yaml
 #- patches/cainjection_in_schedules.yaml
 #+kubebuilder:scaffold:crdkustomizecainjectionpatch
 

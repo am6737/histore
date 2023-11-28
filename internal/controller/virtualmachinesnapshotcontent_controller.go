@@ -79,9 +79,9 @@ type VirtualMachineSnapshotContentReconciler struct {
 	Vc VolumeController
 }
 
-//+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachinesnapshotcontents,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachinesnapshotcontents/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachinesnapshotcontents/finalizers,verbs=update
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinesnapshotcontents,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinesnapshotcontents/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinesnapshotcontents/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -126,7 +126,7 @@ func (r *VirtualMachineSnapshotContentReconciler) Reconcile(ctx context.Context,
 	if vmSnapshotContentDeleting(content) {
 		if err := r.volumeDeleteHandler(content); err != nil {
 			logger.Error(err, "volume deleteHandle")
-			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+			return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
 		}
 		if err := r.removeFinalizerFromVmsc(content); err != nil {
 			logger.Error(err, "failed to remove VirtualMachineSnapshotContent finalizer")

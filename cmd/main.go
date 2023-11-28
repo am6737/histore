@@ -161,10 +161,6 @@ func main() {
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
-	//if err = (&hitoseacomv1.VirtualMachineSnapshot{}).SetupWebhookWithManager(mgr); err != nil {
-	//	setupLog.Error(err, "unable to create webhook", "webhook", "VirtualMachineSnapshot")
-	//	os.Exit(1)
-	//}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")

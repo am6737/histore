@@ -1,4 +1,4 @@
-apiVersion: hitosea.com/v1
+apiVersion: snapshot.hitosea.com/v1
 kind: VirtualMachineSnapshot
 metadata:
   labels:

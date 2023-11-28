@@ -59,11 +59,11 @@ type ScheduleReconciler struct {
 	Log logr.Logger
 }
 
-//+kubebuilder:rbac:groups=hitosea.com,resources=schedules,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=hitosea.com,resources=schedules/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=hitosea.com,resources=schedules/finalizers,verbs=update
-//+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachinesnapshots,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachineschedulesnapshots/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=schedules,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=schedules/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=schedules/finalizers,verbs=update
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinesnapshots,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachineschedulesnapshots/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachines,verbs=get;list;watch
 //+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachines/status,verbs=get
 

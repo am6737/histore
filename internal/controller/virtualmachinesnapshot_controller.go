@@ -57,9 +57,9 @@ type VirtualMachineSnapshotReconciler struct {
 	Log      logr.Logger
 }
 
-//+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachinesnapshots,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachinesnapshots/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=hitosea.com,resources=virtualmachinesnapshots/finalizers,verbs=update
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinesnapshots,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinesnapshots/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinesnapshots/finalizers,verbs=update
 //+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachines,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachines/status,verbs=get
 //+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachineinstances,verbs=get;list;watch
@@ -223,7 +223,7 @@ func (r *VirtualMachineSnapshotReconciler) createContent(vmSnapshot *hitoseacomv
 			continue
 		}
 
-		if _, ok := pvc.Labels["hitosea.com/histore"]; ok {
+		if _, ok := pvc.Labels["snapshot.hitosea.com/histore"]; ok {
 			r.Log.Info("PVC snapshots not supported", vmSnapshot.Namespace, pvcName)
 			continue
 		}

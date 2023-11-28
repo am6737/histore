@@ -57,7 +57,7 @@ spec:
       #             values:
       #               - linux
       securityContext:
-        runAsNonRoot: false
+        runAsNonRoot: true
         # TODO(user): For common cases that do not require escalating privileges
         # it is recommended to ensure that all your Pods/Containers are restrictive.
         # More info: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
@@ -70,9 +70,8 @@ spec:
         - /manager
         args:
         - --leader-elect
-        image: hub.hitosea.com/csiaddons/histore:dev
+        image: hub.hitosea.com/csiaddons/histore:latest
         name: manager
-        imagePullPolicy: Always
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -95,7 +94,7 @@ spec:
         resources:
           limits:
             cpu: 500m
-            memory: 256Mi
+            memory: 128Mi
           requests:
             cpu: 10m
             memory: 64Mi
