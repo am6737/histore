@@ -98,5 +98,17 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
+        volumeMounts:
+          - name: ceph-csi-config
+            mountPath: /etc/ceph-csi-config/
+          - name: ceph-config
+            mountPath: /etc/ceph/
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
+      volumes:
+        - name: ceph-config
+          configMap:
+            name: ceph-config
+        - name: ceph-csi-config
+          configMap:
+            name: ceph-csi-config
