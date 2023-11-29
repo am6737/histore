@@ -28,7 +28,7 @@ type Snapshotter interface {
 	GetSnapshotStatus(ctx context.Context, snapshotID string) (bool, time.Time, int64, error)
 }
 
-const ScheduleSnapshotLabelKey = "schedule-snapshot.schedule.snapshot.hitosea.com"
+const ScheduleSnapshotLabelKey = "schedule.snapshot.hitosea.com"
 const ScheduleSnapshotLabelValue = "true"
 
 type VirtualMachineSnapshot struct {

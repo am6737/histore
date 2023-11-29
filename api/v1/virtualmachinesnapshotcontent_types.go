@@ -73,12 +73,13 @@ type SourceSpec struct {
 type VirtualMachineSnapshotContentPhase int
 
 const (
-	WaitForCreation VirtualMachineSnapshotContentPhase = iota
-	EnableReplication
-	VolumeDemote
-	VolumePromote
-	DisableReplication
-	SnapshotCreation
+	Create VirtualMachineSnapshotContentPhase = iota
+	Flatten
+	Enable
+	Demote
+	Promote
+	Disable
+	Snapshot
 	Complete
 )
 

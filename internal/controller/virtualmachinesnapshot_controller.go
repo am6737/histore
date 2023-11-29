@@ -58,21 +58,21 @@ type VirtualMachineSnapshotReconciler struct {
 }
 
 //+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinesnapshots,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinesnapshots/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinesnapshots/Status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinesnapshots/finalizers,verbs=update
 //+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachines,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachines/status,verbs=get
+//+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachines/Status,verbs=get
 //+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachineinstances,verbs=get;list;watch
-//+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachineinstances/status,verbs=get
+//+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachineinstances/Status,verbs=get
 //+kubebuilder:rbac:groups=cdi.kubevirt.io,resources=datavolumes,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=cdi.kubevirt.io,resources=datasources,verbs=get;list;watch
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots/status,verbs=get
+//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots/Status,verbs=get
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch;update;delete
-//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents/status,verbs=get;list;watch;update
+//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents/Status,verbs=get;list;watch;update
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update
-//+kubebuilder:rbac:groups="",resources=persistentvolumeclaims/status,verbs=get;list;watch;update
+//+kubebuilder:rbac:groups="",resources=persistentvolumeclaims/Status,verbs=get;list;watch;update
 //+kubebuilder:rbac:groups="",resources=persistentvolumes,verbs=get;list;watch;create
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
@@ -89,6 +89,7 @@ type VirtualMachineSnapshotReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.14.4/pkg/reconcile
 func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+	var retry time.Duration
 
 	// 1. 根据请求获取到 VirtualMachineSnapshot 对象
 	vmSnapshot := &hitoseacomv1.VirtualMachineSnapshot{}
@@ -119,33 +120,31 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	// Make sure status is initialized before doing anything
-	//if vmSnapshot.Status.VirtualMachineSnapshotContentName == nil {
-	//	//if source != nil {
-	//	if vmSnapshotProgressing(vmSnapshot) && !vmSnapshotTerminating(vmSnapshot) {
-	//		// create content if does not exist
-	//		if content == nil {
-	//			if err := r.createContent(vmSnapshot); err != nil {
-	//				return ctrl.Result{}, err
-	//			}
-	//		}
-	//	}
-	//	//}
-	//}
-
-	// create content if does not exist
-	if content == nil {
-		if err = r.createContent(vmSnapshot); err != nil {
-			return ctrl.Result{}, err
+	// Make sure Status is initialized before doing anything
+	if vmSnapshot.Status != nil {
+		if vmSnapshotProgressing(vmSnapshot) && !vmSnapshotTerminating(vmSnapshot) {
+			// create Content if does not exist
+			if content == nil {
+				if err = r.createContent(vmSnapshot); err != nil {
+					return ctrl.Result{}, err
+				}
+			}
 		}
-		//vmSnapshot.Status.Phase = hitoseacomv1.InProgress
 	}
+
+	// create Content if does not exist
+	//if Content == nil {
+	//	if err = r.createContent(vmSnapshot); err != nil {
+	//		return ctrl.Result{}, err
+	//	}
+	//	//vmSnapshot.Status.Phase = hitoseacomv1.InProgress
+	//}
 
 	if vmSnapshotTerminating(vmSnapshot) && content != nil {
 		//vmSnapshot.Status.Phase = hitoseacomv1.Deleting
-		// Delete content if that's the policy or if the snapshot
-		// is marked to be deleted and the content is not ready yet
-		// - no point of keeping an unready content
+		// Delete Content if that's the policy or if the snapshot
+		// is marked to be deleted and the Content is not ready yet
+		// - no point of keeping an unready Content
 		if shouldDeleteContent(vmSnapshot, content) {
 			r.Log.Info("Deleting vmsnapshotcontent", "namespace", content.Namespace, "name", content.Name)
 			if err = r.Delete(ctx, content); err != nil && !apierrors.IsNotFound(err) {
@@ -163,6 +162,10 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		}, nil
 	}
 
+	if retry == 0 {
+		return ctrl.Result{RequeueAfter: timeUntilDeadline(vmSnapshot)}, nil
+	}
+
 	//_, err = r.getVM(vmSnapshot)
 	//if err != nil {
 	//	return ctrl.Result{}, err
@@ -173,7 +176,9 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 	//	return reconcile.Result{}, nil
 	//}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{
+		RequeueAfter: 5 * time.Second,
+	}, nil
 }
 
 func shouldDeleteContent(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot, content *hitoseacomv1.VirtualMachineSnapshotContent) bool {
@@ -189,8 +194,33 @@ func vmSnapshotTerminating(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool
 	return vmSnapshotDeleting(vmSnapshot) || vmSnapshotDeadlineExceeded(vmSnapshot)
 }
 
-func vmSnapshotDeadlineExceeded(snapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
-	return false
+func vmSnapshotDeadlineExceeded(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
+	if vmSnapshotFailed(vmSnapshot) {
+		return true
+	}
+	if vmSnapshot.Status == nil || vmSnapshot.Status.Phase != hitoseacomv1.InProgress {
+		return false
+	}
+	return timeUntilDeadline(vmSnapshot) < 0
+}
+
+func timeUntilDeadline(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) time.Duration {
+	failureDeadline := getFailureDeadline(vmSnapshot)
+	// No Deadline set by user
+	if failureDeadline == 0 {
+		return failureDeadline
+	}
+	deadline := vmSnapshot.CreationTimestamp.Add(failureDeadline)
+	return time.Until(deadline)
+}
+
+func getFailureDeadline(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) time.Duration {
+	failureDeadline := hitoseacomv1.DefaultFailureDeadline
+	if vmSnapshot.Spec.FailureDeadline != nil {
+		failureDeadline = vmSnapshot.Spec.FailureDeadline.Duration
+	}
+
+	return failureDeadline
 }
 
 func vmSnapshotDeleting(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) bool {
@@ -422,11 +452,10 @@ func vmSnapshotError(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) *hitoseaco
 func (r *VirtualMachineSnapshotReconciler) getContent(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) (*hitoseacomv1.VirtualMachineSnapshotContent, error) {
 	contentName := GetVMSnapshotContentName(vmSnapshot)
 	vmsc := &hitoseacomv1.VirtualMachineSnapshotContent{}
-	err := r.Client.Get(context.TODO(), client.ObjectKey{
+	if err := r.Client.Get(context.TODO(), client.ObjectKey{
 		Namespace: vmSnapshot.Namespace,
 		Name:      contentName,
-	}, vmsc)
-	if err != nil {
+	}, vmsc); err != nil {
 		if apierrors.IsNotFound(err) {
 			// 如果资源不存在，则返回一个空的对象
 			return nil, nil
@@ -442,7 +471,7 @@ func GetVMSnapshotContentName(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) s
 		return *vmSnapshot.Status.VirtualMachineSnapshotContentName
 	}
 
-	return fmt.Sprintf("%s-%s", "vmsnapshot-content", vmSnapshot.UID)
+	return fmt.Sprintf("%s-%s", "vmsnapshot-Content", vmSnapshot.UID)
 }
 
 func (r *VirtualMachineSnapshotReconciler) getVM(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) (*kubevirtv1.VirtualMachine, error) {
@@ -489,7 +518,7 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 	}
 	if vmSnapshotDeleting(vmSnapshotCpy) {
 		// Enable the vmsnapshot to be deleted only in case it completed
-		// or after waiting until the content is deleted if needed
+		// or after waiting until the Content is deleted if needed
 		if !vmSnapshotProgressing(vmSnapshot) || contentDeletedIfNeeded(vmSnapshotCpy, content) {
 			//RemoveFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
 			time.Sleep(5 * time.Second)
@@ -500,7 +529,7 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 	} else {
 		//AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
 		if content != nil && content.Status != nil {
-			// content exists and is initialized
+			// Content exists and is initialized
 			vmSnapshotCpy.Status.VirtualMachineSnapshotContentName = &content.Name
 			vmSnapshotCpy.Status.CreationTime = content.Status.CreationTime
 			vmSnapshotCpy.Status.ReadyToUse = content.Status.ReadyToUse
@@ -547,7 +576,7 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		}
 		newVmSnapshot.Status = vmSnapshotCpy.Status
 		if err = r.Client.Status().Update(ctx, &newVmSnapshot); err != nil {
-			return fmt.Errorf("failed to update resource status: %w", err)
+			return fmt.Errorf("failed to update resource Status: %w", err)
 		}
 
 		return nil

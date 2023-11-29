@@ -4,15 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	hitoseacomv1 "github.com/am6737/histore/api/v1"
 	"github.com/am6737/histore/pkg/ceph/rbd"
 	"github.com/am6737/histore/pkg/ceph/util"
+	"github.com/am6737/histore/pkg/config"
 	"github.com/am6737/histore/pkg/util/log"
 	librbd "github.com/ceph/go-ceph/rbd"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"strings"
+	"time"
 )
 
 var ErrImageNotFound = errors.New("image not found")
@@ -23,6 +29,209 @@ var ErrSnapNotFound = errors.New("snapshot not found")
 type VolumeService struct {
 	Client client.Client
 	Log    logr.Logger
+}
+
+func (v *VolumeService) SyncMasterImage(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error) {
+	masterRbdImageStatus, err := rbdVol.GetImageMirroringStatus()
+	if err != nil {
+		v.Log.Error(err, "masterRbd.GetImageMirroringStatus err")
+		return false, nil
+	}
+
+	for _, mrs := range masterRbdImageStatus.SiteStatuses {
+		if mrs.MirrorUUID == "" {
+			rs1, err := mrs.DescriptionReplayStatus()
+			if err != nil {
+				if strings.Contains(err.Error(), "No such file or directory") {
+					return false, nil
+				}
+				return false, err
+			}
+			if rs1.ReplayState == "idle" {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
+func (v *VolumeService) SyncSlaveImage(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error) {
+	sRbdStatus, err := rbdVol.GetImageMirroringStatus()
+	if err != nil {
+		v.Log.Error(err, "GetImageMirroringStatus err")
+		return false, nil
+	}
+
+	for _, srs := range sRbdStatus.SiteStatuses {
+		if srs.MirrorUUID == "" {
+			if strings.Contains(srs.Description, "remote image is not primary") || strings.Contains(srs.Description, "local image is primary") {
+				return true, nil
+			}
+			replayStatus, err := srs.DescriptionReplayStatus()
+			if err != nil {
+				if strings.Contains(err.Error(), "No such file or directory") {
+					return false, nil
+				}
+				v.Log.Error(err, "SyncSlaveImage replayStatus err")
+				return false, nil
+			}
+			if replayStatus.ReplayState == "idle" {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
+func (v *VolumeService) Create(ctx context.Context, name string, volumeId string, parameters map[string]string, materSecrets map[string]string, slaveSecrets map[string]string) (string, error) {
+	vol, err := v.CreateVolume(ctx, &CreateVolumeRequest{
+		Name:         name,
+		VolumeId:     volumeId,
+		Parameters:   parameters,
+		MaterSecrets: materSecrets,
+		SlaveSecrets: slaveSecrets,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	vid := vol.VolumeId
+
+	v.Log.Info(fmt.Sprintf("waiting for volume flatten"), "volumeId", vid)
+
+	return vid, nil
+}
+
+func (v *VolumeService) Flatten(ctx context.Context, volumeHandle string, secret map[string]string, maxWait time.Duration) (bool, error) {
+	cr, err := util.NewUserCredentials(secret)
+	if err != nil {
+		v.Log.Error(err, "NewUserCredentials")
+		return false, err
+	}
+	defer cr.DeleteCredentials()
+
+	rbdVol, err := rbd.GenVolFromVolID(ctx, volumeHandle, cr, secret)
+	if err != nil {
+		return false, err
+	}
+	defer rbdVol.Destroy()
+
+	success, err := rbdVol.IsFlattenCompleted(maxWait)
+	if err != nil {
+		return false, err
+	}
+
+	if !success {
+		return false, ErrFlattenTimeout
+	}
+
+	return true, nil
+}
+
+func (v *VolumeService) Enable(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error) {
+	state, err := rbdVol.GetLocalState()
+	if err != nil {
+		return false, err
+	}
+	if state.Up {
+		return true, nil
+	}
+	if err := rbdVol.EnableImageMirroring(librbd.ImageMirrorModeSnapshot); err != nil {
+		if strings.Contains(err.Error(), "Device or resource busy") {
+			return false, nil
+		}
+		v.Log.Error(err, "Master image enabled failed")
+		return false, err
+	}
+	v.Log.Info("Master image enabled successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+
+	return true, nil
+}
+
+func (v *VolumeService) Demote(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error) {
+	state, err := rbdVol.GetImageMirroringInfo()
+	if err != nil {
+		return false, err
+	}
+	if !state.Primary {
+		return true, nil
+	}
+
+	v.Log.Info("wait mater image demote", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+	if err = rbdVol.DemoteImage(); err != nil {
+		if strings.Contains(err.Error(), "Device or resource busy") {
+			return false, nil
+		}
+		v.Log.Error(err, "demote master image failed")
+		return false, err
+	}
+	v.Log.Info("master image demote successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+
+	return true, nil
+}
+
+func (v *VolumeService) Promote(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error) {
+	state, err := rbdVol.GetImageMirroringInfo()
+	if err != nil {
+		return false, err
+	}
+	if state.Primary {
+		return true, nil
+	}
+
+	v.Log.Info("wait slave image promote", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+	if err = rbdVol.PromoteImage(false); err != nil {
+		if strings.Contains(err.Error(), "Device or resource busy") {
+			return false, nil
+		}
+		v.Log.Error(err, "Promote slave image failed")
+		return false, err
+	}
+	v.Log.Info("slave image promote successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+
+	return true, nil
+}
+
+func (v *VolumeService) Disable(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error) {
+	state, err := rbdVol.GetLocalState()
+	if err != nil {
+		return false, err
+	}
+	if !state.Up {
+		return true, nil
+	}
+
+	if err = rbdVol.DisableImageMirroring(false); err != nil {
+		if strings.Contains(err.Error(), "Device or resource busy") {
+			return false, nil
+		}
+		v.Log.Error(err, "disable slave image image failed")
+	}
+	v.Log.Info("slave image disable successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+
+	return true, nil
+}
+
+func (v *VolumeService) Snapshot(ctx context.Context, volumeHandle string, secret map[string]string) (string, error) {
+	ssc, err := config.GetCephCsiConfigForSC(v.Client, config.DC.SlaveStorageClass)
+	if err != nil {
+		v.Log.Error(err, "getCephCsiConfigForSC")
+		return "", err
+	}
+
+	snap, err := v.CreateSnapshot(ctx, &CreateSnapshotRequest{
+		SourceVolumeId: volumeHandle,
+		Name:           uuid.New().String(),
+		Secrets:        secret,
+		Parameters:     map[string]string{"clusterID": ssc.ClusterID, "pool": ssc.Pool},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return snap.SnapshotId, nil
 }
 
 func (v *VolumeService) RestoreSnapshot(ctx context.Context, req *RestoreSnapshotRequest) (*RestoreSnapshotResponse, error) {
@@ -385,4 +594,35 @@ func (v *VolumeService) validateRestoreReq(ctx context.Context, req *RestoreSnap
 	}
 
 	return nil
+}
+
+func (v *VolumeService) updateVolumeStatus(ctx context.Context, content *hitoseacomv1.VirtualMachineSnapshotContent, newVolumeStatus hitoseacomv1.VolumeStatus) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var newContent hitoseacomv1.VirtualMachineSnapshotContent
+		if err := v.Client.Get(ctx, types.NamespacedName{
+			Namespace: content.Namespace,
+			Name:      content.Name,
+		}, &newContent); err != nil {
+			return err
+		}
+
+		var targetIndex int
+		found := false
+		for i, v := range content.Status.VolumeStatus {
+			if v.VolumeName == newVolumeStatus.VolumeName {
+				targetIndex = i
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("volume %s not found", newVolumeStatus.VolumeName)
+		}
+		copyNonEmptyFields(&newContent.Status.VolumeStatus[targetIndex], &newVolumeStatus)
+		if err := v.Client.Status().Update(ctx, &newContent); err != nil {
+			return fmt.Errorf("failed to update resource Status: %w", err)
+		}
+
+		return nil
+	})
 }
