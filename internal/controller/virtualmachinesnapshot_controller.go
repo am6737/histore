@@ -102,13 +102,7 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	if vmSnapshotDeleting(vmSnapshot) {
-		if err := r.removeFinalizerFromVms(vmSnapshot); err != nil {
-			logger.Error(err, "Failed to remove VirtualMachineSnapshot finalizer")
-			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
-		}
-		return reconcile.Result{}, nil
-	} else {
+	if !vmSnapshotDeleting(vmSnapshot) {
 		if err := r.addFinalizerToVms(vmSnapshot); err != nil {
 			logger.Error(err, "Failed to add VirtualMachineSnapshot finalizer")
 			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
@@ -155,6 +149,14 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
+	if vmSnapshotDeleting(vmSnapshot) && content == nil {
+		if err = r.removeFinalizerFromVms(vmSnapshot); err != nil {
+			logger.Error(err, "Failed to remove VirtualMachineSnapshot finalizer")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		return ctrl.Result{RequeueAfter: time.Second}, nil
+	}
+
 	if err = r.updateSnapshotStatus(vmSnapshot); err != nil {
 		r.Log.Error(err, "updateSnapshotStatus")
 		return ctrl.Result{
@@ -176,9 +178,7 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 	//	return reconcile.Result{}, nil
 	//}
 
-	return ctrl.Result{
-		RequeueAfter: 5 * time.Second,
-	}, nil
+	return ctrl.Result{}, nil
 }
 
 func shouldDeleteContent(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot, content *hitoseacomv1.VirtualMachineSnapshotContent) bool {
@@ -471,21 +471,17 @@ func GetVMSnapshotContentName(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) s
 		return *vmSnapshot.Status.VirtualMachineSnapshotContentName
 	}
 
-	return fmt.Sprintf("%s-%s", "vmsnapshot-Content", vmSnapshot.UID)
+	return fmt.Sprintf("%s-%s", "vmsnapshot-content", vmSnapshot.UID)
 }
 
 func (r *VirtualMachineSnapshotReconciler) getVM(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot) (*kubevirtv1.VirtualMachine, error) {
 	vmName := vmSnapshot.Spec.Source.Name
 
-	// 创建一个虚拟机对象
 	vm := &kubevirtv1.VirtualMachine{}
-
-	// 尝试从 API 服务器获取虚拟机对象
 	if err := r.Client.Get(context.TODO(), types.NamespacedName{
 		Namespace: vmSnapshot.Namespace,
 		Name:      vmName,
 	}, vm); err != nil {
-		// 如果对象不存在，返回 nil
 		if apierrors.IsNotFound(err) {
 			return vm, nil
 		}

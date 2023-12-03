@@ -18,7 +18,6 @@ import (
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
-	"time"
 )
 
 var ErrImageNotFound = errors.New("image not found")
@@ -37,19 +36,37 @@ func (v *VolumeService) SyncMasterImage(ctx context.Context, rbdVol *rbd.RbdVolu
 		v.Log.Error(err, "masterRbd.GetImageMirroringStatus err")
 		return false, nil
 	}
-
+	success := false
 	for _, mrs := range masterRbdImageStatus.SiteStatuses {
+		//dump.P("SyncMasterImage", mrs)
 		if mrs.MirrorUUID == "" {
+			//if strings.Contains(mrs.Description, "local image is primary") {
+			//	dump.Println("mrs.Description", mrs.Description)
+			//return true, nil
+			//}
 			rs1, err := mrs.DescriptionReplayStatus()
-			if err != nil {
-				if strings.Contains(err.Error(), "No such file or directory") {
-					return false, nil
+			if err == nil {
+				if rs1.ReplayState == "idle" {
+					success = true
+					return true, nil
 				}
-				return false, err
+				//if strings.Contains(err.Error(), "No such file or directory") {
+				//	return false, nil
+				//}
+				//return false, err
 			}
-			if rs1.ReplayState == "idle" {
-				return true, nil
+		} else {
+			rs1, err := mrs.DescriptionReplayStatus()
+			if err == nil {
+				if rs1.ReplayState == "idle" {
+					success = true
+					return true, nil
+				}
 			}
+		}
+
+		if success {
+			return true, nil
 		}
 	}
 
@@ -85,26 +102,44 @@ func (v *VolumeService) SyncSlaveImage(ctx context.Context, rbdVol *rbd.RbdVolum
 	return false, nil
 }
 
-func (v *VolumeService) Create(ctx context.Context, name string, volumeId string, parameters map[string]string, materSecrets map[string]string, slaveSecrets map[string]string) (string, error) {
+func (v *VolumeService) Create(ctx context.Context, name string, volumeId, sourceVolumeId string, parameters map[string]string, materSecrets map[string]string, slaveSecrets map[string]string) (bool, error) {
+
+	cr, err := util.NewUserCredentials(materSecrets)
+	if err != nil {
+		v.Log.Error(err, "NewUserCredentials")
+		return false, err
+	}
+	defer cr.DeleteCredentials()
+
+	rbdVol, err := rbd.GenVolFromVolID(ctx, volumeId, cr, materSecrets)
+	if err != nil {
+		if !errors.Is(err, librbd.ErrNotFound) {
+			return false, err
+		}
+	}
+	defer rbdVol.Destroy()
+
+	if rbdVol.CreatedAt != nil {
+		return true, nil
+	}
+
 	vol, err := v.CreateVolume(ctx, &CreateVolumeRequest{
 		Name:         name,
-		VolumeId:     volumeId,
+		VolumeId:     sourceVolumeId,
 		Parameters:   parameters,
 		MaterSecrets: materSecrets,
 		SlaveSecrets: slaveSecrets,
 	})
 	if err != nil {
-		return "", err
+		return false, err
 	}
 
-	vid := vol.VolumeId
+	v.Log.Info(fmt.Sprintf("waiting for volume flatten"), "volumeId", vol.VolumeId)
 
-	v.Log.Info(fmt.Sprintf("waiting for volume flatten"), "volumeId", vid)
-
-	return vid, nil
+	return true, nil
 }
 
-func (v *VolumeService) Flatten(ctx context.Context, volumeHandle string, secret map[string]string, maxWait time.Duration) (bool, error) {
+func (v *VolumeService) Flatten(ctx context.Context, volumeHandle string, secret map[string]string) (bool, error) {
 	cr, err := util.NewUserCredentials(secret)
 	if err != nil {
 		v.Log.Error(err, "NewUserCredentials")
@@ -118,13 +153,13 @@ func (v *VolumeService) Flatten(ctx context.Context, volumeHandle string, secret
 	}
 	defer rbdVol.Destroy()
 
-	success, err := rbdVol.IsFlattenCompleted(maxWait)
+	success, err := rbdVol.IsFlattenCompleted()
 	if err != nil {
 		return false, err
 	}
 
 	if !success {
-		return false, ErrFlattenTimeout
+		return false, nil
 	}
 
 	return true, nil
@@ -138,14 +173,15 @@ func (v *VolumeService) Enable(ctx context.Context, rbdVol *rbd.RbdVolume) (bool
 	if state.Up {
 		return true, nil
 	}
-	if err := rbdVol.EnableImageMirroring(librbd.ImageMirrorModeSnapshot); err != nil {
+	if err = rbdVol.EnableImageMirroring(librbd.ImageMirrorModeSnapshot); err != nil {
 		if strings.Contains(err.Error(), "Device or resource busy") {
 			return false, nil
 		}
 		v.Log.Error(err, "Master image enabled failed")
 		return false, err
 	}
-	v.Log.Info("Master image enabled successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+	v.Log.Info("master image enabled successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+	v.Log.Info("wait mater image demote", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 
 	return true, nil
 }
@@ -159,7 +195,6 @@ func (v *VolumeService) Demote(ctx context.Context, rbdVol *rbd.RbdVolume) (bool
 		return true, nil
 	}
 
-	v.Log.Info("wait mater image demote", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 	if err = rbdVol.DemoteImage(); err != nil {
 		if strings.Contains(err.Error(), "Device or resource busy") {
 			return false, nil
@@ -168,11 +203,12 @@ func (v *VolumeService) Demote(ctx context.Context, rbdVol *rbd.RbdVolume) (bool
 		return false, err
 	}
 	v.Log.Info("master image demote successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+	v.Log.Info("wait slave image promote", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 
 	return true, nil
 }
 
-func (v *VolumeService) Promote(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error) {
+func (v *VolumeService) Promote(ctx context.Context, rbdVol *rbd.RbdVolume, force bool) (bool, error) {
 	state, err := rbdVol.GetImageMirroringInfo()
 	if err != nil {
 		return false, err
@@ -181,8 +217,7 @@ func (v *VolumeService) Promote(ctx context.Context, rbdVol *rbd.RbdVolume) (boo
 		return true, nil
 	}
 
-	v.Log.Info("wait slave image promote", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
-	if err = rbdVol.PromoteImage(false); err != nil {
+	if err = rbdVol.PromoteImage(force); err != nil {
 		if strings.Contains(err.Error(), "Device or resource busy") {
 			return false, nil
 		}
@@ -190,11 +225,12 @@ func (v *VolumeService) Promote(ctx context.Context, rbdVol *rbd.RbdVolume) (boo
 		return false, err
 	}
 	v.Log.Info("slave image promote successfully", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
+	v.Log.Info("wait slave image disable", "key", fmt.Sprintf("%s/%s", rbdVol.Pool, rbdVol.RbdImageName))
 
 	return true, nil
 }
 
-func (v *VolumeService) Disable(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error) {
+func (v *VolumeService) Disable(ctx context.Context, rbdVol *rbd.RbdVolume, force bool) (bool, error) {
 	state, err := rbdVol.GetLocalState()
 	if err != nil {
 		return false, err
@@ -203,7 +239,7 @@ func (v *VolumeService) Disable(ctx context.Context, rbdVol *rbd.RbdVolume) (boo
 		return true, nil
 	}
 
-	if err = rbdVol.DisableImageMirroring(false); err != nil {
+	if err = rbdVol.DisableImageMirroring(force); err != nil {
 		if strings.Contains(err.Error(), "Device or resource busy") {
 			return false, nil
 		}
@@ -311,8 +347,8 @@ func (v *VolumeService) CreateVolume(ctx context.Context, req *CreateVolumeReque
 		v.Log.Error(err, "GenSnapFromOptions")
 		return nil, err
 	}
-	reservedID := uuid.New().String()
-	rbdSnapName := "csi-vol-" + reservedID
+	reservedID := req.Name
+	rbdSnapName := "csi-vol-" + req.Name
 	rbdSnap.RbdImageName = masterRbd.RbdImageName
 	rbdSnap.VolSize = masterRbd.VolSize
 	rbdSnap.SourceVolumeID = masterVolumeHandle
@@ -371,8 +407,7 @@ func (v *VolumeService) DeleteVolume(ctx context.Context, req *DeleteVolumeReque
 	rbdVol, err := rbd.GenVolFromVolID(ctx, req.VolumeId, cr, secrets)
 	if err != nil {
 		if errors.Is(err, librbd.ErrNotFound) {
-			v.Log.Info(fmt.Sprintf("master source Volume ID %s not found", req.VolumeId))
-			return nil, err
+			v.Log.Info(fmt.Sprintf("Volume ID %s not found", req.VolumeId))
 		}
 		return nil, err
 	}

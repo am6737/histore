@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/am6737/histore/pkg/ceph/rbd"
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"time"
 )
 
 type RestoreSnapshotRequest struct {
@@ -26,12 +25,12 @@ type VolumeController interface {
 }
 
 type VolumeStage interface {
-	Create(ctx context.Context, name string, volumeId string, parameters map[string]string, materSecrets map[string]string, slaveSecrets map[string]string) (string, error)
-	Flatten(ctx context.Context, volumeHandle string, secret map[string]string, maxWait time.Duration) (bool, error)
+	Create(ctx context.Context, name string, volumeId, sourceVolumeId string, parameters map[string]string, materSecrets map[string]string, slaveSecrets map[string]string) (bool, error)
+	Flatten(ctx context.Context, volumeHandle string, secret map[string]string) (bool, error)
 	Enable(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error)
 	Demote(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error)
-	Promote(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error)
-	Disable(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error)
+	Promote(ctx context.Context, rbdVol *rbd.RbdVolume, force bool) (bool, error)
+	Disable(ctx context.Context, rbdVol *rbd.RbdVolume, force bool) (bool, error)
 	Snapshot(ctx context.Context, volumeHandle string, secret map[string]string) (string, error)
 	SyncMasterImage(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error)
 	SyncSlaveImage(ctx context.Context, rbdVol *rbd.RbdVolume) (bool, error)
