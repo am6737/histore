@@ -205,7 +205,7 @@ func (t *vmRestoreTarget) UpdateRestoreInProgress() error {
 	if vmCopy.Status.RestoreInProgress == nil {
 		vmCopy.Status.RestoreInProgress = &t.vmRestore.Name
 
-		// unfortunately, status Updater does not return the updated resource
+		// unfortunately, Status Updater does not return the updated resource
 		// but the controller is watching VMs so will get notified
 		//return t.controller.vmStatusUpdater.UpdateStatus(vmCopy)
 	}
@@ -235,8 +235,8 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 		return false, err
 	}
 	//
-	//if content == nil {
-	//	return false, fmt.Errorf("content does not exist")
+	//if Content == nil {
+	//	return false, fmt.Errorf("Content does not exist")
 	//}
 
 	snapshotVM := content.Spec.Source.VirtualMachine
@@ -261,7 +261,7 @@ func (t *vmRestoreTarget) reconcileSpec() (bool, error) {
 		if nv.DataVolume != nil || nv.PersistentVolumeClaim != nil {
 			for k := range t.vmRestore.Status.Restores {
 				vr := &t.vmRestore.Status.Restores[k]
-				//fmt.Println("vmRestore status => ", vr)
+				//fmt.Println("vmRestore Status => ", vr)
 				if vr.VolumeName != nv.Name {
 					continue
 				}

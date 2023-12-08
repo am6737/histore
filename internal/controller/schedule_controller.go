@@ -60,12 +60,12 @@ type ScheduleReconciler struct {
 }
 
 //+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=schedules,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=schedules/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=schedules/Status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=schedules/finalizers,verbs=update
 //+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinesnapshots,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachineschedulesnapshots/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachineschedulesnapshots/Status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachines,verbs=get;list;watch
-//+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachines/status,verbs=get
+//+kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachines/Status,verbs=get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.

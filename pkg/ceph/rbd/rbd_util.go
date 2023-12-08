@@ -915,42 +915,34 @@ func flattenClonedRbdImages(
 	return nil
 }
 
-func (ri *rbdImage) IsFlattenCompleted(maxWait time.Duration) (bool, error) {
+func (ri *rbdImage) IsFlattenCompleted() (bool, error) {
 	ta, err := ri.conn.GetTaskAdmin()
 	if err != nil {
 		return false, err
 	}
+
 	found := false
-	startTime := time.Now()
-	for {
-		tasks, err := ta.List()
-		if err != nil {
-			return false, err
-		}
-		if len(tasks) == 0 {
-			return true, nil
-		}
-		for _, task := range tasks {
-			if task.Refs.Action == "flatten" &&
-				task.Refs.PoolName == ri.Pool &&
-				task.Refs.PoolNamespace == ri.RadosNamespace &&
-				task.Refs.ImageName == ri.RbdImageName {
-				found = true
-				break
-			} else {
-				found = false
-			}
-		}
-
-		if !found {
-			return true, nil
-		}
-
-		if time.Since(startTime) >= maxWait {
+	tasks, err := ta.List()
+	if err != nil {
+		return false, err
+	}
+	if len(tasks) == 0 {
+		return true, nil
+	}
+	for _, task := range tasks {
+		if task.Refs.Action == "flatten" &&
+			task.Refs.PoolName == ri.Pool &&
+			task.Refs.PoolNamespace == ri.RadosNamespace &&
+			task.Refs.ImageName == ri.RbdImageName {
+			found = true
 			break
+		} else {
+			found = false
 		}
+	}
 
-		time.Sleep(5 * time.Second)
+	if !found {
+		return true, nil
 	}
 	return false, nil
 }

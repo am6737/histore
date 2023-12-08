@@ -64,7 +64,7 @@ spec:
               failureDeadline:
                 description: This time represents the number of seconds we permit
                   the vm snapshot to take. In case we pass this deadline we mark this
-                  snapshot as failed. Defaults to DefaultFailureDeadline - 5min
+                  snapshot as failed. Defaults to DefaultFailureDeadline - 15min
                 type: string
               source:
                 description: 'INSERT ADDITIONAL SPEC FIELDS - desired state of cluster

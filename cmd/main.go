@@ -145,6 +145,7 @@ func main() {
 		Scheme:   mgr.GetScheme(),
 		Log:      mgr.GetLogger(),
 		Vc:       (&controller.VolumeService{Client: mgr.GetClient(), Log: mgr.GetLogger()}),
+		Vs:       (&controller.VolumeService{Client: mgr.GetClient(), Log: mgr.GetLogger()}),
 		Recorder: mgr.GetEventRecorderFor("VirtualMachineSnapshotContent"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachineSnapshotContent")

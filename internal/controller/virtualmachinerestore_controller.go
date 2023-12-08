@@ -69,7 +69,7 @@ func (r *VirtualMachineRestoreReconciler) SetupWithManager(mgr ctrl.Manager) err
 }
 
 //+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinerestores,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinerestores/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinerestores/Status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=snapshot.hitosea.com,resources=virtualmachinerestores/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -195,7 +195,7 @@ func (r *VirtualMachineRestoreReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, err
 	}
 	if updated {
-		updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Updating target status"))
+		updateRestoreCondition(vmRestoreOut, newProgressingCondition(corev1.ConditionTrue, "Updating target Status"))
 		updateRestoreCondition(vmRestoreOut, newReadyCondition(corev1.ConditionFalse, "Waiting for target update"))
 		//if err = r.doStatusUpdate(vmRestoreIn, vmRestoreOut); err != nil {
 		//	return reconcile.Result{
@@ -347,7 +347,7 @@ func (r *VirtualMachineRestoreReconciler) reconcileVolumeRestores(vmRestore *hit
 				waitingPVC = true
 			}
 		} else if pvc.Status.Phase != corev1.ClaimBound {
-			return false, fmt.Errorf("PVC %s/%s in status %q", pvc.Namespace, pvc.Name, pvc.Status.Phase)
+			return false, fmt.Errorf("PVC %s/%s in Status %q", pvc.Namespace, pvc.Name, pvc.Status.Phase)
 		}
 	}
 
@@ -486,7 +486,7 @@ func (r *VirtualMachineRestoreReconciler) getSnapshotContent(vmRestore *hitoseac
 	}
 
 	if vms.Status.VirtualMachineSnapshotContentName == nil {
-		return nil, fmt.Errorf("no snapshot content name in %v", objKey)
+		return nil, fmt.Errorf("no snapshot Content name in %v", objKey)
 	}
 
 	obj := &hitoseacomv1.VirtualMachineSnapshotContent{}
@@ -573,7 +573,7 @@ func (r *VirtualMachineRestoreReconciler) createRestorePVC(
 	pvc.Spec.VolumeName = pvName
 	// pvc Binding pv
 	if err := r.Client.Update(context.TODO(), pvc); err != nil {
-		return fmt.Errorf("failed to update PVC status: %w", err)
+		return fmt.Errorf("failed to update PVC Status: %w", err)
 	}
 
 	return nil

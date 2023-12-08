@@ -104,7 +104,6 @@ func CreateVolumeFromSnapshot(
 	// 3. 从指定的快照创建RBD克隆
 	err = createRBDClone(ctx, parentVol, cloneRbd, rbdSnap)
 	if err != nil {
-		fmt.Println(err.Error() + "  createRBDClone")
 		return cloneRbd, err
 	}
 

@@ -20,7 +20,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"time"
 )
+
+const DefaultFailureDeadline = 15 * time.Minute
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -51,7 +54,7 @@ type VirtualMachineSnapshotSpec struct {
 	// This time represents the number of seconds we permit the vm snapshot
 	// to take. In case we pass this deadline we mark this snapshot
 	// as failed.
-	// Defaults to DefaultFailureDeadline - 5min
+	// Defaults to DefaultFailureDeadline - 15min
 	// +optional
 	FailureDeadline *metav1.Duration `json:"failureDeadline,omitempty"`
 }
