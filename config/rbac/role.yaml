@@ -111,16 +111,16 @@ rules:
 - apiGroups:
   - snapshot.hitosea.com
   resources:
-  - schedules/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - snapshot.hitosea.com
-  resources:
   - schedules/status
   verbs:
   - get
   - patch
+  - update
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - schedules/finalizers
+  verbs:
   - update
 - apiGroups:
   - snapshot.hitosea.com
@@ -137,16 +137,16 @@ rules:
 - apiGroups:
   - snapshot.hitosea.com
   resources:
-  - virtualmachinerestores/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - snapshot.hitosea.com
-  resources:
   - virtualmachinerestores/status
   verbs:
   - get
   - patch
+  - update
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - virtualmachinerestores/finalizers
+  verbs:
   - update
 - apiGroups:
   - snapshot.hitosea.com
@@ -171,16 +171,16 @@ rules:
 - apiGroups:
   - snapshot.hitosea.com
   resources:
-  - virtualmachinesnapshotcontents/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - snapshot.hitosea.com
-  resources:
   - virtualmachinesnapshotcontents/status
   verbs:
   - get
   - patch
+  - update
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - virtualmachinesnapshotcontents/finalizers
+  verbs:
   - update
 - apiGroups:
   - snapshot.hitosea.com
@@ -197,16 +197,16 @@ rules:
 - apiGroups:
   - snapshot.hitosea.com
   resources:
-  - virtualmachinesnapshots/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - snapshot.hitosea.com
-  resources:
   - virtualmachinesnapshots/status
   verbs:
   - get
   - patch
+  - update
+- apiGroups:
+  - snapshot.hitosea.com
+  resources:
+  - virtualmachinesnapshots/finalizers
+  verbs:
   - update
 - apiGroups:
   - snapshot.storage.k8s.io
