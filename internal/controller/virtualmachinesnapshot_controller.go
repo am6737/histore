@@ -126,16 +126,7 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
-	// create Content if does not exist
-	//if Content == nil {
-	//	if err = r.createContent(vmSnapshot); err != nil {
-	//		return ctrl.Result{}, err
-	//	}
-	//	//vmSnapshot.Status.Phase = hitoseacomv1.InProgress
-	//}
-
 	if vmSnapshotTerminating(vmSnapshot) && content != nil {
-		//vmSnapshot.Status.Phase = hitoseacomv1.Deleting
 		// Delete Content if that's the policy or if the snapshot
 		// is marked to be deleted and the Content is not ready yet
 		// - no point of keeping an unready Content
@@ -149,12 +140,8 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
-	if vmSnapshotDeleting(vmSnapshot) && content == nil {
-		if err = r.removeFinalizerFromVms(vmSnapshot); err != nil {
-			logger.Error(err, "Failed to remove VirtualMachineSnapshot finalizer")
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-		}
-		return ctrl.Result{RequeueAfter: time.Second}, nil
+	if vmSnapshotDeleting(vmSnapshot) {
+		retry = 15 * time.Second
 	}
 
 	if err = r.updateSnapshotStatus(vmSnapshot); err != nil {
@@ -178,7 +165,7 @@ func (r *VirtualMachineSnapshotReconciler) Reconcile(ctx context.Context, req ct
 	//	return reconcile.Result{}, nil
 	//}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: retry}, nil
 }
 
 func shouldDeleteContent(vmSnapshot *hitoseacomv1.VirtualMachineSnapshot, content *hitoseacomv1.VirtualMachineSnapshotContent) bool {
@@ -515,12 +502,12 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 	if vmSnapshotDeleting(vmSnapshotCpy) {
 		// Enable the vmsnapshot to be deleted only in case it completed
 		// or after waiting until the Content is deleted if needed
-		if !vmSnapshotProgressing(vmSnapshot) || contentDeletedIfNeeded(vmSnapshotCpy, content) {
+		if contentDeletedIfNeeded(vmSnapshotCpy, content) {
 			//RemoveFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
-			time.Sleep(5 * time.Second)
 			if err = r.removeFinalizerFromVms(vmSnapshotCpy); err != nil {
 				return err
 			}
+			return nil
 		}
 	} else {
 		//AddFinalizer(vmSnapshotCpy, vmSnapshotFinalizer)
@@ -559,8 +546,6 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		updateSnapshotCondition(vmSnapshotCpy, newReadyCondition(corev1.ConditionUnknown, "Unknown state"))
 	}
 
-	//return r.Status().Update(context.Background(), vmSnapshotCpy)
-
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		ctx := context.Background()
 		var newVmSnapshot hitoseacomv1.VirtualMachineSnapshot
@@ -574,7 +559,6 @@ func (r *VirtualMachineSnapshotReconciler) updateSnapshotStatus(vmSnapshot *hito
 		if err = r.Client.Status().Update(ctx, &newVmSnapshot); err != nil {
 			return fmt.Errorf("failed to update resource Status: %w", err)
 		}
-
 		return nil
 	})
 }
